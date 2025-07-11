@@ -19,6 +19,29 @@ const description = "Personal website - Coming Soon";
         />
     </head>
     <body>
+        <!-- Floating Progress Indicator -->
+        <div class="progress-indicator">
+            <a href="/progress" class="progress-orb" id="progressOrb">
+                <div class="progress-ring">
+                    <svg class="progress-svg" viewBox="0 0 60 60">
+                        <circle class="progress-bg" cx="30" cy="30" r="25"
+                        ></circle>
+                        <circle class="progress-fill" cx="30" cy="30" r="25"
+                        ></circle>
+                    </svg>
+                    <div class="progress-icon">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path
+                                d="M13.5 2c-5.629 0-10.212 4.436-10.475 10h2.05c.254-4.781 4.303-8.6 9.425-8.6 5.243 0 9.5 4.257 9.5 9.5s-4.257 9.5-9.5 9.5c-2.381 0-4.551-.881-6.213-2.334l2.713-2.713h-7.5v7.5l2.713-2.713c2.313 2.024 5.315 3.26 8.787 3.26 7.18 0 13-5.82 13-13s-5.82-13-13.5-13z"
+                            ></path>
+                        </svg>
+                    </div>
+                </div>
+                <div class="progress-glow"></div>
+                <span class="progress-label">Progress</span>
+            </a>
+        </div>
+
         <main class="container">
             <div class="content">
                 <h1 class="name">George Hyde</h1>
@@ -29,7 +52,7 @@ const description = "Personal website - Coming Soon";
 
                 <div class="links">
                     <a
-                        href="https://github.com/georgehyde-dot"
+                        href="https://github.com/georgehyde"
                         target="_blank"
                         rel="noopener noreferrer"
                         class="link"
@@ -47,7 +70,7 @@ const description = "Personal website - Coming Soon";
                     </a>
 
                     <a
-                        href="https://linkedin.com/in/george-hyde-b8a1562bb"
+                        href="https://linkedin.com/in/george-hyde"
                         target="_blank"
                         rel="noopener noreferrer"
                         class="link"
@@ -202,6 +225,190 @@ const description = "Personal website - Coming Soon";
                 }
             }
 
+            /* Progress Indicator */
+            .progress-indicator {
+                position: fixed;
+                top: 2rem;
+                right: 2rem;
+                z-index: 1000;
+                animation: slideInFromCorner 0.8s ease-out 0.3s both;
+            }
+
+            .progress-orb {
+                position: relative;
+                display: block;
+                width: 80px;
+                height: 80px;
+                text-decoration: none;
+                cursor: pointer;
+                transition: all 0.3s ease;
+            }
+
+            .progress-ring {
+                position: relative;
+                width: 60px;
+                height: 60px;
+                margin: 10px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 50%;
+                background: rgba(24, 24, 27, 0.8);
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(63, 63, 70, 0.3);
+                transition: all 0.3s ease;
+            }
+
+            .progress-svg {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                transform: rotate(-90deg);
+            }
+
+            .progress-bg {
+                fill: none;
+                stroke: rgba(63, 63, 70, 0.3);
+                stroke-width: 2;
+            }
+
+            .progress-fill {
+                fill: none;
+                stroke: url(#progressGradient);
+                stroke-width: 3;
+                stroke-linecap: round;
+                stroke-dasharray: 157; /* 2π × 25 */
+                stroke-dashoffset: 110; /* ~30% progress */
+                transition: stroke-dashoffset 0.5s ease;
+            }
+
+            .progress-icon {
+                width: 20px;
+                height: 20px;
+                color: #a1a1aa;
+                transition: all 0.3s ease;
+                z-index: 2;
+            }
+
+            .progress-glow {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                width: 60px;
+                height: 60px;
+                transform: translate(-50%, -50%);
+                border-radius: 50%;
+                background: radial-gradient(
+                    circle,
+                    rgba(59, 130, 246, 0.3),
+                    transparent 70%
+                );
+                opacity: 0;
+                transition: all 0.3s ease;
+                pointer-events: none;
+            }
+
+            .progress-label {
+                position: absolute;
+                top: 100%;
+                left: 50%;
+                transform: translateX(-50%);
+                font-size: 0.75rem;
+                font-weight: 500;
+                color: #71717a;
+                margin-top: 0.5rem;
+                opacity: 0;
+                transition: all 0.3s ease;
+                white-space: nowrap;
+            }
+
+            .progress-orb:hover .progress-ring {
+                transform: scale(1.1);
+                border-color: rgba(113, 113, 122, 0.5);
+                box-shadow: 0 8px 32px rgba(59, 130, 246, 0.2);
+            }
+
+            .progress-orb:hover .progress-glow {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1.5);
+            }
+
+            .progress-orb:hover .progress-icon {
+                color: #3b82f6;
+                transform: scale(1.1);
+            }
+
+            .progress-orb:hover .progress-label {
+                opacity: 1;
+                transform: translateX(-50%) translateY(2px);
+            }
+
+            .progress-orb:hover .progress-fill {
+                stroke-dashoffset: 78; /* ~50% on hover */
+            }
+
+            /* Spark animation */
+            .spark {
+                position: absolute;
+                width: 4px;
+                height: 4px;
+                background: #3b82f6;
+                border-radius: 50%;
+                pointer-events: none;
+                box-shadow: 0 0 6px #3b82f6;
+            }
+
+            .spark-animation {
+                animation: sparkFly 0.6s ease-out forwards;
+            }
+
+            @keyframes slideInFromCorner {
+                from {
+                    opacity: 0;
+                    transform: translate(20px, -20px) scale(0.8);
+                }
+                to {
+                    opacity: 1;
+                    transform: translate(0, 0) scale(1);
+                }
+            }
+
+            @keyframes sparkFly {
+                0% {
+                    opacity: 1;
+                    transform: scale(1);
+                }
+                100% {
+                    opacity: 0;
+                    transform: scale(0.2) translate(var(--dx), var(--dy));
+                }
+            }
+
+            @media (max-width: 768px) {
+                .progress-indicator {
+                    top: 1rem;
+                    right: 1rem;
+                }
+
+                .progress-orb {
+                    width: 60px;
+                    height: 60px;
+                }
+
+                .progress-ring {
+                    width: 45px;
+                    height: 45px;
+                    margin: 7.5px;
+                }
+
+                .progress-icon {
+                    width: 16px;
+                    height: 16px;
+                }
+            }
+
             @media (max-width: 480px) {
                 .container {
                     padding: 1.5rem;
@@ -212,5 +419,97 @@ const description = "Personal website - Coming Soon";
                 }
             }
         </style>
+
+        <script>
+            document.addEventListener("DOMContentLoaded", () => {
+                const progressOrb = document.getElementById("progressOrb");
+
+                // Add gradient definition to SVG
+                const svg = progressOrb.querySelector(".progress-svg");
+                const defs = document.createElementNS(
+                    "http://www.w3.org/2000/svg",
+                    "defs",
+                );
+                const gradient = document.createElementNS(
+                    "http://www.w3.org/2000/svg",
+                    "linearGradient",
+                );
+                gradient.id = "progressGradient";
+                gradient.setAttribute("x1", "0%");
+                gradient.setAttribute("y1", "0%");
+                gradient.setAttribute("x2", "100%");
+                gradient.setAttribute("y2", "0%");
+
+                const stop1 = document.createElementNS(
+                    "http://www.w3.org/2000/svg",
+                    "stop",
+                );
+                stop1.setAttribute("offset", "0%");
+                stop1.setAttribute(
+                    "style",
+                    "stop-color:#10b981;stop-opacity:1",
+                );
+
+                const stop2 = document.createElementNS(
+                    "http://www.w3.org/2000/svg",
+                    "stop",
+                );
+                stop2.setAttribute("offset", "50%");
+                stop2.setAttribute(
+                    "style",
+                    "stop-color:#3b82f6;stop-opacity:1",
+                );
+
+                const stop3 = document.createElementNS(
+                    "http://www.w3.org/2000/svg",
+                    "stop",
+                );
+                stop3.setAttribute("offset", "100%");
+                stop3.setAttribute(
+                    "style",
+                    "stop-color:#8b5cf6;stop-opacity:1",
+                );
+
+                gradient.appendChild(stop1);
+                gradient.appendChild(stop2);
+                gradient.appendChild(stop3);
+                defs.appendChild(gradient);
+                svg.appendChild(defs);
+
+                // Spark effect on click
+                progressOrb.addEventListener("click", (e) => {
+                    e.preventDefault();
+
+                    // Create sparks
+                    for (let i = 0; i < 8; i++) {
+                        const spark = document.createElement("div");
+                        spark.className = "spark spark-animation";
+
+                        const angle = (i / 8) * Math.PI * 2;
+                        const distance = 40 + Math.random() * 20;
+                        const dx = Math.cos(angle) * distance + "px";
+                        const dy = Math.sin(angle) * distance + "px";
+
+                        spark.style.setProperty("--dx", dx);
+                        spark.style.setProperty("--dy", dy);
+                        spark.style.left = "50%";
+                        spark.style.top = "50%";
+                        spark.style.transform = "translate(-50%, -50%)";
+
+                        progressOrb.appendChild(spark);
+
+                        // Remove spark after animation
+                        setTimeout(() => {
+                            spark.remove();
+                        }, 600);
+                    }
+
+                    // Navigate after a brief delay to show the spark effect
+                    setTimeout(() => {
+                        window.location.href = "/progress";
+                    }, 200);
+                });
+            });
+        </script>
     </body>
 </html>

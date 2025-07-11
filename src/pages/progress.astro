@@ -1,0 +1,665 @@
+---
+const title = "Progress Tracker - George Hyde";
+const description = "Interactive roadmap of site development progress";
+
+// Sample progress data - in the future this could come from a CMS or API
+const milestones = [
+    {
+        id: 1,
+        title: "Initial Setup",
+        description: "Set up Astro project with Cloudflare Workers deployment",
+        status: "completed",
+        completedDate: "2025-07-10",
+        position: { x: 25, y: 70 },
+    },
+    {
+        id: 2,
+        title: "Landing Page",
+        description: "Create clean dark mode landing page with social links",
+        status: "completed",
+        completedDate: "2025-07-11",
+        position: { x: 34, y: 70 },
+    },
+    {
+        id: 3,
+        title: "Progress Tracker",
+        description:
+            "Interactive roadmap with milestones and completion tracking",
+        status: "in-progress",
+        completedDate: null,
+        position: { x: 43, y: 70 },
+    },
+    {
+        id: 4,
+        title: "Photo Gallery From Walks with my Dog Loki",
+        description:
+            "A fun rolling gallery of photos from walks with my dog Loki, randomly choosing new images daily",
+        status: "planned",
+        completedDate: null,
+        position: { x: 52, y: 70 },
+    },
+    {
+        id: 5,
+        title: "Pathfinding Algorithm Visualizer",
+        description:
+            "Visualize and explore different pathfinding algorithms, with an interactive demo",
+        status: "planned",
+        completedDate: null,
+        position: { x: 61, y: 70 },
+    },
+    {
+        id: 6,
+        title: "User Login",
+        description: "Functional login with SSO, and blog access",
+        status: "planned",
+        completedDate: null,
+        position: { x: 70, y: 70 },
+    },
+    {
+        id: 7,
+        title: "User accounts with favorite images and the ability to share an article",
+        description:
+            "User accounts with the ability to save favorite images and share articles with others",
+        status: "planned",
+        completedDate: null,
+        position: { x: 79, y: 70 },
+    },
+];
+
+const completedCount = milestones.filter(
+    (m) => m.status === "completed",
+).length;
+const totalCount = milestones.length;
+const progressPercentage = (completedCount / totalCount) * 100;
+---
+
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="generator" content={Astro.generator} />
+        <meta name="description" content={description} />
+        <title>{title}</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+            rel="stylesheet"
+        />
+    </head>
+    <body>
+        <nav class="nav">
+            <a href="/" class="nav-link">← Back to Home</a>
+        </nav>
+
+        <main class="container">
+            <header class="header">
+                <h1 class="title">Development Progress</h1>
+                <p class="subtitle">
+                    Interactive roadmap of site features and milestones
+                </p>
+                <div class="progress-summary">
+                    <div class="progress-text">
+                        {completedCount} of {totalCount} milestones completed ({
+                            Math.round(progressPercentage)
+                        }%)
+                    </div>
+                    <div class="progress-bar">
+                        <div
+                            class="progress-fill"
+                            style={`width: ${progressPercentage}%`}
+                        >
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <div class="roadmap-container">
+                <svg
+                    class="roadmap-svg"
+                    viewBox="0 0 100 100"
+                    preserveAspectRatio="xMidYMid meet"
+                >
+                    <!-- Background path -->
+                    <path
+                        d="M 5 50 Q 20 20, 35 45 T 65 35 T 95 55"
+                        stroke="rgba(63, 63, 70, 0.3)"
+                        stroke-width="0.8"
+                        fill="none"
+                        class="path-background"></path>
+
+                    <!-- Progress path -->
+                    <path
+                        d="M 5 50 Q 20 20, 35 45 65 35 T 95 55"
+                        stroke="url(#progressGradient)"
+                        stroke-width="1.2"
+                        fill="none"
+                        class="path-progress"
+                        style="stroke-dasharray: 0 100; stroke-dashoffset: 0;"
+                    ></path>
+
+                    <!-- Gradient definition -->
+                    <defs>
+                        <linearGradient
+                            id="progressGradient"
+                            x1="0%"
+                            y1="0%"
+                            x2="100%"
+                            y2="0%"
+                        >
+                            <stop
+                                offset="0%"
+                                style="stop-color:#10b981;stop-opacity:1"
+                            ></stop>
+                            <stop
+                                offset="100%"
+                                style="stop-color:#3b82f6;stop-opacity:1"
+                            ></stop>
+                        </linearGradient>
+
+                        <filter id="glow">
+                            <feGaussianBlur
+                                stdDeviation="1"
+                                result="coloredBlur"></feGaussianBlur>
+                            <feMerge>
+                                <feMergeNode in="coloredBlur"></feMergeNode>
+                                <feMergeNode in="SourceGraphic"></feMergeNode>
+                            </feMerge>
+                        </filter>
+                    </defs>
+                </svg>
+
+                <!-- Milestone points -->
+                <div class="milestones">
+                    {
+                        milestones.map((milestone) => (
+                            <div
+                                class={`milestone milestone--${milestone.status}`}
+                                style={`left: ${milestone.position.x}%; top: ${milestone.position.y}%;`}
+                                data-milestone-id={milestone.id}
+                                data-position-y={milestone.position.y}
+                            >
+                                <div class="milestone-point">
+                                    {milestone.status === "completed" && (
+                                        <svg
+                                            class="milestone-icon"
+                                            viewBox="0 0 24 24"
+                                            fill="currentColor"
+                                        >
+                                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                                        </svg>
+                                    )}
+                                    {milestone.status === "in-progress" && (
+                                        <div class="milestone-spinner" />
+                                    )}
+                                    {milestone.status === "planned" && (
+                                        <div class="milestone-dot" />
+                                    )}
+                                </div>
+
+                                <div class="milestone-tooltip">
+                                    <h3 class="tooltip-title">
+                                        {milestone.title}
+                                    </h3>
+                                    <p class="tooltip-description">
+                                        {milestone.description}
+                                    </p>
+                                    {milestone.completedDate && (
+                                        <div class="tooltip-date">
+                                            Completed:{" "}
+                                            {new Date(
+                                                milestone.completedDate,
+                                            ).toLocaleDateString()}
+                                        </div>
+                                    )}
+                                    <div
+                                        class={`tooltip-status tooltip-status--${milestone.status}`}
+                                    >
+                                        {milestone.status
+                                            .charAt(0)
+                                            .toUpperCase() +
+                                            milestone.status
+                                                .slice(1)
+                                                .replace("-", " ")}
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    }
+                </div>
+            </div>
+
+            <div class="timeline">
+                <h2 class="timeline-title">Recent Activity</h2>
+                <div class="timeline-list">
+                    {
+                        milestones
+                            .filter((m) => m.completedDate)
+                            .sort(
+                                (a, b) =>
+                                    new Date(b.completedDate!).getTime() -
+                                    new Date(a.completedDate!).getTime(),
+                            )
+                            .map((milestone) => (
+                                <div class="timeline-item">
+                                    <div class="timeline-date">
+                                        {new Date(
+                                            milestone.completedDate!,
+                                        ).toLocaleDateString()}
+                                    </div>
+                                    <div class="timeline-content">
+                                        <h3 class="timeline-item-title">
+                                            {milestone.title}
+                                        </h3>
+                                        <p class="timeline-item-description">
+                                            {milestone.description}
+                                        </p>
+                                    </div>
+                                </div>
+                            ))
+                    }
+                </div>
+            </div>
+        </main>
+
+        <style>
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            body {
+                font-family:
+                    "Inter",
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    "Segoe UI",
+                    Roboto,
+                    sans-serif;
+                background: #0a0a0a;
+                color: #e4e4e7;
+                line-height: 1.6;
+                min-height: 100vh;
+            }
+
+            .nav {
+                padding: 1.5rem 2rem;
+                border-bottom: 1px solid rgba(63, 63, 70, 0.2);
+            }
+
+            .nav-link {
+                color: #a1a1aa;
+                text-decoration: none;
+                font-weight: 500;
+                transition: color 0.2s ease;
+            }
+
+            .nav-link:hover {
+                color: #e4e4e7;
+            }
+
+            .container {
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 3rem 2rem;
+            }
+
+            .header {
+                text-align: center;
+                margin-bottom: 4rem;
+            }
+
+            .title {
+                font-size: clamp(2rem, 6vw, 3.5rem);
+                font-weight: 700;
+                margin-bottom: 1rem;
+                background: linear-gradient(135deg, #ffffff, #a1a1aa);
+                background-clip: text;
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+
+            .subtitle {
+                font-size: 1.25rem;
+                color: #71717a;
+                margin-bottom: 2rem;
+            }
+
+            .progress-summary {
+                max-width: 400px;
+                margin: 0 auto;
+            }
+
+            .progress-text {
+                font-size: 0.875rem;
+                font-weight: 500;
+                color: #a1a1aa;
+                margin-bottom: 0.5rem;
+            }
+
+            .progress-bar {
+                height: 8px;
+                background: rgba(63, 63, 70, 0.3);
+                border-radius: 4px;
+                overflow: hidden;
+            }
+
+            .progress-fill {
+                height: 100%;
+                background: linear-gradient(90deg, #10b981, #3b82f6);
+                border-radius: 4px;
+                transition: width 1s ease-out;
+            }
+
+            .roadmap-container {
+                position: relative;
+                min-height: 500px;
+                height: auto;
+                padding: 2rem 1rem;
+                margin-bottom: 4rem;
+                background: rgba(24, 24, 27, 0.5);
+                border-radius: 1rem;
+                border: 1px solid rgba(63, 63, 70, 0.2);
+                overflow: visible;
+            }
+
+            .roadmap-svg {
+                width: 100%;
+                height: 100%;
+                position: absolute;
+                top: 0;
+                left: 0;
+            }
+
+            .path-background {
+                opacity: 0.4;
+            }
+
+            .path-progress {
+                filter: url(#glow);
+                transition: stroke-dasharray 1s ease-out;
+            }
+
+            .milestones {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+            }
+
+            .milestone {
+                position: absolute;
+                transform: translate(-50%, -50%);
+                cursor: pointer;
+            }
+
+            .milestone-point {
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                position: relative;
+                transition: all 0.3s ease;
+            }
+
+            .milestone--completed .milestone-point {
+                background: #10b981;
+                border: 3px solid #065f46;
+                box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+            }
+
+            .milestone--in-progress .milestone-point {
+                background: #3b82f6;
+                border: 3px solid #1e40af;
+                box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
+            }
+
+            .milestone--planned .milestone-point {
+                background: rgba(113, 113, 122, 0.3);
+                border: 3px solid #3f3f46;
+            }
+
+            .milestone-icon {
+                width: 14px;
+                height: 14px;
+                color: white;
+            }
+
+            .milestone-spinner {
+                width: 12px;
+                height: 12px;
+                border: 2px solid rgba(255, 255, 255, 0.3);
+                border-top: 2px solid white;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+            }
+
+            .milestone-dot {
+                width: 8px;
+                height: 8px;
+                background: #71717a;
+                border-radius: 50%;
+            }
+
+            .milestone:hover .milestone-point {
+                transform: scale(1.2);
+            }
+
+            .milestone-tooltip {
+                position: absolute;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(24, 24, 27, 0.95);
+                border: 1px solid rgba(63, 63, 70, 0.4);
+                border-radius: 0.75rem;
+                padding: 1rem;
+                min-width: 250px;
+                backdrop-filter: blur(10px);
+                opacity: 0;
+                visibility: hidden;
+                transition: all 0.3s ease;
+                z-index: 10;
+                bottom: 120%;
+            }
+
+            /* Tooltip positioning will be handled by JavaScript */
+
+            .milestone:hover .milestone-tooltip {
+                opacity: 1;
+                visibility: visible;
+                transform: translateX(-50%) translateY(-8px);
+            }
+
+            .milestone:hover .milestone-tooltip {
+                transform: translateX(-50%) translateY(-8px);
+            }
+
+            .milestone .milestone-tooltip[style*="top: 120%"] {
+                transform: translateX(-50%) translateY(8px) !important;
+            }
+
+            .milestone:hover .milestone-tooltip[style*="top: 120%"] {
+                transform: translateX(-50%) translateY(8px) !important;
+            }
+
+            .tooltip-title {
+                font-size: 1rem;
+                font-weight: 600;
+                margin-bottom: 0.5rem;
+                color: #ffffff;
+            }
+
+            .tooltip-description {
+                font-size: 0.875rem;
+                color: #a1a1aa;
+                margin-bottom: 0.75rem;
+            }
+
+            .tooltip-date {
+                font-size: 0.75rem;
+                color: #71717a;
+                margin-bottom: 0.5rem;
+            }
+
+            .tooltip-status {
+                font-size: 0.75rem;
+                font-weight: 500;
+                padding: 0.25rem 0.5rem;
+                border-radius: 0.375rem;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+            }
+
+            .tooltip-status--completed {
+                background: rgba(16, 185, 129, 0.2);
+                color: #10b981;
+            }
+
+            .tooltip-status--in-progress {
+                background: rgba(59, 130, 246, 0.2);
+                color: #3b82f6;
+            }
+
+            .tooltip-status--planned {
+                background: rgba(113, 113, 122, 0.2);
+                color: #71717a;
+            }
+
+            .timeline {
+                margin-top: 4rem;
+            }
+
+            .timeline-title {
+                font-size: 1.5rem;
+                font-weight: 600;
+                margin-bottom: 2rem;
+                color: #ffffff;
+            }
+
+            .timeline-list {
+                space-y: 1.5rem;
+            }
+
+            .timeline-item {
+                display: flex;
+                gap: 2rem;
+                padding: 1.5rem;
+                background: rgba(24, 24, 27, 0.5);
+                border-radius: 0.75rem;
+                border: 1px solid rgba(63, 63, 70, 0.2);
+                margin-bottom: 1rem;
+            }
+
+            .timeline-date {
+                font-size: 0.875rem;
+                font-weight: 500;
+                color: #71717a;
+                min-width: 100px;
+            }
+
+            .timeline-content {
+                flex: 1;
+            }
+
+            .timeline-item-title {
+                font-size: 1.125rem;
+                font-weight: 600;
+                margin-bottom: 0.5rem;
+                color: #ffffff;
+            }
+
+            .timeline-item-description {
+                font-size: 0.875rem;
+                color: #a1a1aa;
+            }
+
+            @keyframes spin {
+                from {
+                    transform: rotate(0deg);
+                }
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+
+            @media (max-width: 768px) {
+                .container {
+                    padding: 2rem 1rem;
+                }
+
+                .roadmap-container {
+                    min-height: 400px;
+                    height: auto;
+                    padding: 1.5rem 0.5rem;
+                }
+
+                .milestone-tooltip {
+                    min-width: 200px;
+                    font-size: 0.875rem;
+                }
+
+                .timeline-item {
+                    flex-direction: column;
+                    gap: 0.5rem;
+                }
+
+                .timeline-date {
+                    min-width: auto;
+                }
+            }
+        </style>
+
+        <script define:vars={{ progressPercentage }}>
+            // Add interaction functionality
+            document.addEventListener("DOMContentLoaded", () => {
+                const milestones = document.querySelectorAll(".milestone");
+
+                milestones.forEach((milestone) => {
+                    milestone.addEventListener("click", () => {
+                        const id = milestone.dataset.milestoneId;
+                        console.log(`Clicked milestone ${id}`);
+                        // Future: Could open a modal with more details
+                    });
+
+                    // Add tooltip positioning logic
+                    const tooltip =
+                        milestone.querySelector(".milestone-tooltip");
+                    if (tooltip) {
+                        milestone.addEventListener("mouseenter", () => {
+                            // Reset positioning
+                            tooltip.style.top = "auto";
+                            tooltip.style.bottom = "120%";
+                            tooltip.style.transform = "translateX(-50%)";
+
+                            // Check if tooltip would be cut off at the top
+                            const rect = tooltip.getBoundingClientRect();
+                            const containerRect = document
+                                .querySelector(".roadmap-container")
+                                ?.getBoundingClientRect();
+
+                            if (containerRect && rect.top < containerRect.top) {
+                                // Position tooltip below the milestone instead
+                                tooltip.style.top = "120%";
+                                tooltip.style.bottom = "auto";
+                            }
+                        });
+                    }
+                });
+
+                // Animate progress path on load
+                const progressPath = document.querySelector(".path-progress");
+                if (progressPath) {
+                    const progressValue = progressPercentage;
+                    setTimeout(() => {
+                        progressPath.style.strokeDasharray = `${progressValue} 100`;
+                    }, 100);
+                }
+            });
+        </script>
+    </body>
+</html>
