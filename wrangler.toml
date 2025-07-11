@@ -1,0 +1,20 @@
+name = "georgehyde-dev"
+compatibility_date = "2023-12-01"
+
+[assets]
+directory = "./dist"
+
+
+# Custom domain routing
+routes = [
+    { pattern = "georgehyde.dev/*", zone_name = "georgehyde.dev" },
+    { pattern = "georgehyde.dev", custom_domain = true },
+]
+
+# Environment variables (if needed)
+[vars]
+ENVIRONMENT = "production"
+
+# Build configuration
+[build]
+command = "npm run build"
