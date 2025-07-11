@@ -25,8 +25,8 @@ const milestones = [
         title: "Progress Tracker",
         description:
             "Interactive roadmap with milestones and completion tracking",
-        status: "in-progress",
-        completedDate: null,
+        status: "completed",
+        completedDate: "2025-07-12",
         position: { x: 43, y: 70 },
     },
     {
@@ -34,7 +34,7 @@ const milestones = [
         title: "Photo Gallery From Walks with my Dog Loki",
         description:
             "A fun rolling gallery of photos from walks with my dog Loki, randomly choosing new images daily",
-        status: "planned",
+        status: "in-progress",
         completedDate: null,
         position: { x: 52, y: 70 },
     },
@@ -66,11 +66,41 @@ const milestones = [
     },
 ];
 
-const completedCount = milestones.filter(
-    (m) => m.status === "completed",
-).length;
+// Calculate progress based on path length and milestone positions
+const completedMilestones = milestones.filter((m) => m.status === "completed");
+const completedCount = completedMilestones.length;
 const totalCount = milestones.length;
-const progressPercentage = (completedCount / totalCount) * 100;
+
+// Function to calculate approximate path length percentage for a given x position
+function getPathProgressAtX(x: number) {
+    // Our path: M 5 50 Q 20 20, 35 45 T 65 35 T 95 55
+    // This is a rough approximation of progress along the curved path
+    const pathStart = 5;
+    const pathEnd = 95;
+    const pathLength = pathEnd - pathStart;
+
+    // Account for the curves - positions earlier in the path represent more progress
+    // due to the curved nature of the path
+    const normalizedX = (x - pathStart) / pathLength;
+
+    // Apply curve adjustment - early positions get slightly more weight
+    const curveAdjustment = normalizedX * (1 + (1 - normalizedX) * 0.1);
+
+    return Math.min(Math.max(curveAdjustment * 100, 0), 100);
+}
+
+// Calculate progress based on the furthest completed milestone's position along the path
+const progressPercentage =
+    completedMilestones.length > 0
+        ? Math.max(
+              ...completedMilestones.map((m) =>
+                  getPathProgressAtX(m.position.x),
+              ),
+          )
+        : 0;
+
+// Also calculate milestone-based progress for display
+const milestoneProgressPercentage = (completedCount / totalCount) * 100;
 ---
 
 <html lang="en">
@@ -102,8 +132,8 @@ const progressPercentage = (completedCount / totalCount) * 100;
                 <div class="progress-summary">
                     <div class="progress-text">
                         {completedCount} of {totalCount} milestones completed ({
-                            Math.round(progressPercentage)
-                        }%)
+                            Math.round(milestoneProgressPercentage)
+                        }% complete)
                     </div>
                     <div class="progress-bar">
                         <div
@@ -131,12 +161,12 @@ const progressPercentage = (completedCount / totalCount) * 100;
 
                     <!-- Progress path -->
                     <path
-                        d="M 5 50 Q 20 20, 35 45 65 35 T 95 55"
+                        d="M 5 50 Q 20 20, 35 45 T 65 35 T 95 55"
                         stroke="url(#progressGradient)"
                         stroke-width="1.2"
                         fill="none"
                         class="path-progress"
-                        style="stroke-dasharray: 0 100; stroke-dashoffset: 0;"
+                        style="stroke-dasharray: 0; stroke-dashoffset: 0;"
                     ></path>
 
                     <!-- Gradient definition -->
@@ -350,7 +380,7 @@ const progressPercentage = (completedCount / totalCount) * 100;
                 height: 100%;
                 background: linear-gradient(90deg, #10b981, #3b82f6);
                 border-radius: 4px;
-                transition: width 1s ease-out;
+                transition: width 2s ease-out;
             }
 
             .roadmap-container {
@@ -367,9 +397,9 @@ const progressPercentage = (completedCount / totalCount) * 100;
 
             .roadmap-svg {
                 width: 100%;
-                height: 100%;
+                height: 110%;
                 position: absolute;
-                top: 0;
+                top: 10;
                 left: 0;
             }
 
@@ -379,7 +409,7 @@ const progressPercentage = (completedCount / totalCount) * 100;
 
             .path-progress {
                 filter: url(#glow);
-                transition: stroke-dasharray 1s ease-out;
+                transition: stroke-dashoffset 1s ease-out;
             }
 
             .milestones {
@@ -653,11 +683,34 @@ const progressPercentage = (completedCount / totalCount) * 100;
 
                 // Animate progress path on load
                 const progressPath = document.querySelector(".path-progress");
+                console.log("Progress path element found:", progressPath);
+
                 if (progressPath) {
                     const progressValue = progressPercentage;
+                    console.log("Progress value:", progressValue);
+
+                    // Get the actual path length for accurate progress
+                    const pathLength = progressPath.getTotalLength();
+                    console.log("Path length:", pathLength);
+
+                    // Set up the stroke-dasharray to cover the full path
+                    progressPath.style.strokeDasharray = pathLength;
+                    console.log("Set stroke-dasharray to:", pathLength);
+
+                    // Calculate how much of the path to show based on progress
+                    const progressOffset =
+                        pathLength * (1 - progressValue / 100);
+                    console.log("Progress offset calculated:", progressOffset);
+
                     setTimeout(() => {
-                        progressPath.style.strokeDasharray = `${progressValue} 100`;
+                        progressPath.style.strokeDashoffset = progressOffset;
+                        console.log(
+                            "Applied stroke-dashoffset:",
+                            progressOffset,
+                        );
                     }, 100);
+                } else {
+                    console.error("Progress path element not found!");
                 }
             });
         </script>
