@@ -11,6 +11,8 @@ const milestones = [
         status: "completed",
         completedDate: "2025-07-10",
         position: { x: 25, y: 70 },
+        extended_description:
+            "Here I made a few decisions about what technologies I would use, and the general plan for the project. I did some quick testing with deploys and decided on Astro for my static site. The decision came down to this being a largely static site, and I liked the concept of islands to use whatever framework I want for dynamic portions, later.",
     },
     {
         id: 2,
@@ -19,6 +21,8 @@ const milestones = [
         status: "completed",
         completedDate: "2025-07-11",
         position: { x: 34, y: 70 },
+        extended_description:
+            "For now I needed something to actually put out, and I thought a work in progress page would be a good way to do that. I also wanted to get a feel for how Astro worked, and set the theme for the site.",
     },
     {
         id: 3,
@@ -28,6 +32,8 @@ const milestones = [
         status: "completed",
         completedDate: "2025-07-12",
         position: { x: 43, y: 70 },
+        extended_description:
+            "This was pretty easy to get out, but there were two main things I spent some time configuring. First, the loading bar on the roadmap image was took me a little bit to get to load in how I wanted. The key was matching the end of the bar up to the milestone hover dots, so there was some unity in how that looked. The second part was getting the milestone dots to look good on different sizd screens. Initiially I wanted to put them along the roadmap, but I need to do some more work to get that right, so in the meantime, I put them in a row.",
     },
     {
         id: 4,
@@ -37,6 +43,7 @@ const milestones = [
         status: "in-progress",
         completedDate: null,
         position: { x: 52, y: 70 },
+        extended_description: "",
     },
     {
         id: 5,
@@ -46,6 +53,7 @@ const milestones = [
         status: "planned",
         completedDate: null,
         position: { x: 61, y: 70 },
+        extended_description: "",
     },
     {
         id: 6,
@@ -54,6 +62,7 @@ const milestones = [
         status: "planned",
         completedDate: null,
         position: { x: 70, y: 70 },
+        extended_description: "",
     },
     {
         id: 7,
@@ -63,6 +72,7 @@ const milestones = [
         status: "planned",
         completedDate: null,
         position: { x: 79, y: 70 },
+        extended_description: "",
     },
 ];
 
@@ -271,20 +281,50 @@ const milestoneProgressPercentage = (completedCount / totalCount) * 100;
                                     new Date(b.completedDate!).getTime() -
                                     new Date(a.completedDate!).getTime(),
                             )
-                            .map((milestone) => (
-                                <div class="timeline-item">
+                            .map((milestone, index) => (
+                                <div
+                                    class="timeline-item"
+                                    data-milestone-id={index}
+                                >
                                     <div class="timeline-date">
                                         {new Date(
                                             milestone.completedDate!,
                                         ).toLocaleDateString()}
                                     </div>
                                     <div class="timeline-content">
-                                        <h3 class="timeline-item-title">
-                                            {milestone.title}
-                                        </h3>
+                                        <div class="timeline-header">
+                                            <h3 class="timeline-item-title">
+                                                {milestone.title}
+                                            </h3>
+                                            <button
+                                                class="timeline-expand-btn"
+                                                aria-label="Toggle milestone details"
+                                            >
+                                                <svg
+                                                    width="16"
+                                                    height="16"
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                    xmlns="http://www.w3.org/2000/svg"
+                                                >
+                                                    <path
+                                                        d="M6 9L12 15L18 9"
+                                                        stroke="currentColor"
+                                                        stroke-width="2"
+                                                        stroke-linecap="round"
+                                                        stroke-linejoin="round"
+                                                    />
+                                                </svg>
+                                            </button>
+                                        </div>
                                         <p class="timeline-item-description">
                                             {milestone.description}
                                         </p>
+                                        <div class="timeline-extended-content">
+                                            <div class="timeline-extended-description">
+                                                {milestone.extended_description}
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             ))
@@ -596,16 +636,74 @@ const milestoneProgressPercentage = (completedCount / totalCount) * 100;
                 flex: 1;
             }
 
+            .timeline-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                margin-bottom: 0.5rem;
+            }
+
             .timeline-item-title {
                 font-size: 1.125rem;
                 font-weight: 600;
-                margin-bottom: 0.5rem;
                 color: #ffffff;
+                margin: 0;
+                flex: 1;
+            }
+
+            .timeline-expand-btn {
+                background: none;
+                border: none;
+                color: #71717a;
+                cursor: pointer;
+                padding: 0.25rem;
+                border-radius: 0.25rem;
+                transition: all 0.2s ease;
+                margin-left: 1rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .timeline-expand-btn:hover {
+                color: #ffffff;
+                background: rgba(63, 63, 70, 0.3);
+            }
+
+            .timeline-expand-btn svg {
+                transition: transform 0.2s ease;
+            }
+
+            .timeline-item.expanded .timeline-expand-btn svg {
+                transform: rotate(180deg);
             }
 
             .timeline-item-description {
                 font-size: 0.875rem;
                 color: #a1a1aa;
+                margin-bottom: 0;
+            }
+
+            .timeline-extended-content {
+                max-height: 0;
+                overflow: hidden;
+                transition: max-height 0.3s ease;
+                margin-top: 0;
+            }
+
+            .timeline-item.expanded .timeline-extended-content {
+                max-height: 500px;
+                margin-top: 1rem;
+            }
+
+            .timeline-extended-description {
+                font-size: 0.875rem;
+                color: #d4d4d8;
+                line-height: 1.6;
+                padding: 1rem;
+                background: rgba(39, 39, 42, 0.5);
+                border-radius: 0.5rem;
+                border: 1px solid rgba(63, 63, 70, 0.2);
             }
 
             @keyframes spin {
@@ -640,6 +738,17 @@ const milestoneProgressPercentage = (completedCount / totalCount) * 100;
 
                 .timeline-date {
                     min-width: auto;
+                }
+
+                .timeline-header {
+                    flex-direction: column;
+                    align-items: flex-start;
+                    gap: 0.5rem;
+                }
+
+                .timeline-expand-btn {
+                    margin-left: 0;
+                    align-self: flex-end;
                 }
             }
         </style>
@@ -677,6 +786,23 @@ const milestoneProgressPercentage = (completedCount / totalCount) * 100;
                                 tooltip.style.top = "120%";
                                 tooltip.style.bottom = "auto";
                             }
+                        });
+                    }
+                });
+
+                // Timeline expand/collapse functionality
+                const timelineItems =
+                    document.querySelectorAll(".timeline-item");
+
+                timelineItems.forEach((item) => {
+                    const expandBtn = item.querySelector(
+                        ".timeline-expand-btn",
+                    );
+
+                    if (expandBtn) {
+                        expandBtn.addEventListener("click", (e) => {
+                            e.preventDefault();
+                            item.classList.toggle("expanded");
                         });
                     }
                 });
