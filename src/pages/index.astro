@@ -100,6 +100,30 @@ const description = "Personal website - Coming Soon";
                         Email
                     </a>
                 </div>
+
+                <!-- GitHub Projects Section -->
+                <div class="github-section">
+                    <h2 class="section-title">Most Recent Project Update</h2>
+                    <p>
+                        My most recently updated personal project, catch the
+                        graph below to see all of my recent activity
+                    </p>
+                    <div id="recent-project" class="project-card loading">
+                        <div class="loading-skeleton"></div>
+                    </div>
+                </div>
+
+                <!-- GitHub Contribution Graph -->
+                <div class="github-section">
+                    <h2 class="section-title">GitHub Activity</h2>
+                    <div class="contribution-graph">
+                        <img
+                            src="https://ghchart.rshah.org/georgehyde-dot"
+                            alt="GitHub Contribution Graph"
+                            class="contribution-chart"
+                        />
+                    </div>
+                </div>
             </div>
         </main>
 
@@ -417,6 +441,138 @@ const description = "Personal website - Coming Soon";
                     margin-bottom: 2rem;
                 }
             }
+
+            /* GitHub Sections */
+            .github-section {
+                margin-top: 3rem;
+                width: 100%;
+            }
+
+            .section-title {
+                font-size: 1.5rem;
+                font-weight: 600;
+                color: #f4f4f5;
+                margin-bottom: 1rem;
+                text-align: center;
+            }
+
+            .project-card {
+                background: rgba(39, 39, 42, 0.5);
+                border: 1px solid rgba(63, 63, 70, 0.5);
+                border-radius: 12px;
+                padding: 1.5rem;
+                backdrop-filter: blur(10px);
+                transition: all 0.3s ease;
+                max-width: 500px;
+                margin: 0 auto;
+            }
+
+            .project-card:hover {
+                border-color: rgba(168, 85, 247, 0.5);
+                transform: translateY(-2px);
+                box-shadow: 0 8px 32px rgba(168, 85, 247, 0.1);
+            }
+
+            .project-card.loading {
+                pointer-events: none;
+            }
+
+            .loading-skeleton {
+                height: 120px;
+                background: linear-gradient(
+                    90deg,
+                    rgba(63, 63, 70, 0.3) 25%,
+                    rgba(82, 82, 91, 0.3) 50%,
+                    rgba(63, 63, 70, 0.3) 75%
+                );
+                background-size: 200% 100%;
+                animation: loading 1.5s infinite;
+                border-radius: 8px;
+            }
+
+            @keyframes loading {
+                0% {
+                    background-position: 200% 0;
+                }
+                100% {
+                    background-position: -200% 0;
+                }
+            }
+
+            .project-title {
+                font-size: 1.25rem;
+                font-weight: 600;
+                color: #f4f4f5;
+                margin-bottom: 0.5rem;
+                text-decoration: none;
+            }
+
+            .project-title:hover {
+                color: #a855f7;
+            }
+
+            .project-description {
+                color: #a1a1aa;
+                margin-bottom: 1rem;
+                line-height: 1.5;
+            }
+
+            .project-meta {
+                display: flex;
+                gap: 1rem;
+                font-size: 0.875rem;
+                color: #71717a;
+            }
+
+            .project-language {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+            }
+
+            .language-color {
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+            }
+
+            .project-updated {
+                opacity: 0.7;
+            }
+
+            .contribution-graph {
+                text-align: center;
+                max-width: 500px;
+                margin: 0 auto;
+            }
+
+            .contribution-chart {
+                width: 100%;
+                height: auto;
+                border-radius: 8px;
+                background: rgba(39, 39, 42, 0.5);
+                padding: 1rem;
+                border: 1px solid rgba(63, 63, 70, 0.5);
+            }
+
+            @media (max-width: 768px) {
+                .github-section {
+                    margin-top: 2rem;
+                }
+
+                .section-title {
+                    font-size: 1.25rem;
+                }
+
+                .project-card {
+                    padding: 1rem;
+                }
+
+                .project-meta {
+                    flex-direction: column;
+                    gap: 0.5rem;
+                }
+            }
         </style>
 
         <script>
@@ -508,7 +664,99 @@ const description = "Personal website - Coming Soon";
                         window.location.href = "/progress";
                     }, 200);
                 });
+
+                // Fetch GitHub data
+                fetchRecentProject();
             });
+
+            // Language colors mapping
+            const languageColors = {
+                JavaScript: "#f1e05a",
+                TypeScript: "#2b7489",
+                Python: "#3572A5",
+                Java: "#b07219",
+                "C++": "#f34b7d",
+                "C#": "#239120",
+                PHP: "#4F5D95",
+                Ruby: "#701516",
+                Go: "#00ADD8",
+                Rust: "#dea584",
+                Swift: "#ffac45",
+                Kotlin: "#F18E33",
+                Dart: "#00B4AB",
+                HTML: "#e34c26",
+                CSS: "#1572B6",
+                Shell: "#89e051",
+                Vue: "#4FC08D",
+                React: "#61DAFB",
+                Astro: "#BC52EE",
+            };
+
+            async function fetchRecentProject() {
+                try {
+                    const response = await fetch(
+                        "https://api.github.com/users/georgehyde-dot/repos?sort=updated&per_page=1",
+                    );
+                    if (!response.ok) throw new Error("Failed to fetch");
+
+                    const repos = await response.json();
+                    if (repos.length > 0) {
+                        displayProject(repos[0]);
+                    }
+                } catch (error) {
+                    console.error("Error fetching GitHub data:", error);
+                    displayProjectError();
+                }
+            }
+
+            function displayProject(repo) {
+                const projectCard = document.getElementById("recent-project");
+                const updatedDate = new Date(
+                    repo.updated_at,
+                ).toLocaleDateString("en-US", {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                });
+
+                const languageColor =
+                    languageColors[repo.language] || "#71717a";
+
+                projectCard.innerHTML = `
+                    <a href="${repo.html_url}" target="_blank" rel="noopener noreferrer" class="project-title">
+                        ${repo.name}
+                    </a>
+                    <p class="project-description">
+                        ${repo.description || "No description available"}
+                    </p>
+                    <div class="project-meta">
+                        ${
+                            repo.language
+                                ? `
+                            <div class="project-language">
+                                <div class="language-color" style="background-color: ${languageColor}"></div>
+                                <span>${repo.language}</span>
+                            </div>
+                        `
+                                : ""
+                        }
+                        <div class="project-updated">Updated ${updatedDate}</div>
+                    </div>
+                `;
+
+                projectCard.classList.remove("loading");
+            }
+
+            function displayProjectError() {
+                const projectCard = document.getElementById("recent-project");
+                projectCard.innerHTML = `
+                    <div class="project-title">Unable to load project</div>
+                    <p class="project-description">
+                        Check out my projects directly on <a href="https://github.com/georgehyde-dot" target="_blank" style="color: #a855f7;">GitHub</a>
+                    </p>
+                `;
+                projectCard.classList.remove("loading");
+            }
         </script>
     </body>
 </html>

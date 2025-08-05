@@ -45,7 +45,7 @@ All commands are run from the root of the project:
 | `npm run preview`         | Preview your build locally, before deploying     |
 | `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
 | `npm run astro -- --help` | Get help using the Astro CLI                     |
-
+| `npm run deploy` | Push the project to Cloudflare                    |
 ## 🛠️ Built With
 
 - **Astro** - Static site generator
@@ -64,4 +64,4 @@ Feel free to check back regularly to see my progress!
 
 ## 🔗 Connect
 
-Visit the live site to learn more about my background, current projects, and development roadmap.
+Visit [https://georgehyde.dev](https://georgehyde.dev) to learn more about my background, current projects, and development roadmap.
