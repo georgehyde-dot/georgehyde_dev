@@ -1,0 +1,143 @@
+---
+/**
+ * @decision DEC-CLERK-003
+ * @title SSR admin stub with Clerk session display
+ * @status accepted
+ * @rationale prerender=false is required so Astro evaluates Astro.locals.auth()
+ *   at request time, not at build time. The page calls auth() to pull the userId
+ *   and sessionId set by clerkMiddleware — middleware has already enforced
+ *   authentication, so by the time this runs the user is guaranteed signed in.
+ *   No client-side Clerk components are imported; the sign-out link uses Clerk's
+ *   hosted sign-out URL to keep the page dependency-free.
+ *   Dark theme matches index.astro (bg #0a0a0a, text #e5e5e5).
+ */
+
+export const prerender = false;
+
+// auth() is set by clerkMiddleware — middleware already enforced sign-in,
+// so userId is non-null here.
+const { userId, sessionId } = Astro.locals.auth();
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin — George Hyde</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        background: #0a0a0a;
+        color: #e5e5e5;
+        font-family: 'Inter', system-ui, sans-serif;
+        font-weight: 400;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .card {
+        background: #141414;
+        border: 1px solid #2a2a2a;
+        border-radius: 12px;
+        padding: 2.5rem 3rem;
+        max-width: 480px;
+        width: 100%;
+        margin: 2rem;
+      }
+
+      h1 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #f5f5f5;
+        margin-bottom: 1.5rem;
+      }
+
+      .field {
+        margin-bottom: 1rem;
+      }
+
+      .label {
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: #6b6b6b;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 0.25rem;
+      }
+
+      .value {
+        font-size: 0.875rem;
+        color: #a3a3a3;
+        font-family: ui-monospace, 'Cascadia Code', monospace;
+        word-break: break-all;
+      }
+
+      .divider {
+        border: none;
+        border-top: 1px solid #2a2a2a;
+        margin: 1.75rem 0;
+      }
+
+      .actions {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      a.btn {
+        display: inline-block;
+        padding: 0.5rem 1.25rem;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        text-decoration: none;
+        transition: opacity 0.15s;
+      }
+
+      a.btn:hover { opacity: 0.8; }
+
+      a.btn-primary {
+        background: #f5f5f5;
+        color: #0a0a0a;
+      }
+
+      a.btn-ghost {
+        background: transparent;
+        color: #a3a3a3;
+        border: 1px solid #2a2a2a;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Admin</h1>
+
+      <div class="field">
+        <div class="label">User ID</div>
+        <div class="value">{userId}</div>
+      </div>
+
+      <div class="field">
+        <div class="label">Session ID</div>
+        <div class="value">{sessionId}</div>
+      </div>
+
+      <hr class="divider" />
+
+      <div class="actions">
+        <a href="/" class="btn btn-ghost">Home</a>
+        <a href="/sign-out" class="btn btn-primary">Sign out</a>
+      </div>
+    </div>
+  </body>
+</html>

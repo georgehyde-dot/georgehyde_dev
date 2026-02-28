@@ -16,6 +16,8 @@ routes = [
 # Environment variables (if needed)
 [vars]
 ENVIRONMENT = "production"
+# Public Clerk key — safe to commit, it's a browser-facing publishable key (not the secret key)
+PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_Y29ycmVjdC13aGlwcGV0LTg5LmNsZXJrLmFjY291bnRzLmRldiQ"
 
 # Build configuration
 [build]
