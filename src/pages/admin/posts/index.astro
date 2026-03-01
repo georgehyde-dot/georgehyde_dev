@@ -1,0 +1,221 @@
+---
+/**
+ * src/pages/admin/posts/index.astro — Admin: list all blog posts.
+ *
+ * SSR page (prerender = false). Lists all posts — published and drafts —
+ * via listAllPosts(). Each row has an Edit link and a Delete form that POSTs
+ * to the update/delete API route with _method=delete (method-override pattern,
+ * since HTML forms only support GET and POST).
+ *
+ * Protected by Clerk middleware — no additional auth check needed here.
+ *
+ * @decision DEC-ADMIN-001
+ * @title PRG pattern (303 redirect) for all admin form mutations
+ * @status accepted
+ * @rationale Delete uses a plain HTML form (no JS required). The form POSTs
+ *   to /admin/api/posts/{slug} with _method=delete. The API route redirects
+ *   303 to this list page. No fetch, no JS event handlers — works everywhere.
+ */
+
+export const prerender = false;
+
+import type { Runtime } from "@astrojs/cloudflare";
+import type { Env } from "../../../lib/kv-store";
+import { listAllPosts, type PostMetadata } from "../../../lib/kv-store";
+
+const runtime = (Astro.locals as Runtime<Env>).runtime;
+const env = runtime.env;
+
+let posts: PostMetadata[] = [];
+let error: string | null = null;
+
+try {
+  posts = await listAllPosts(env);
+} catch (e) {
+  error = e instanceof Error ? e.message : "Failed to load posts.";
+}
+
+const formatDate = (iso: string): string => {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+};
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Posts — Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        background: #0a0a0a;
+        color: #e5e5e5;
+        font-family: 'Inter', system-ui, sans-serif;
+        min-height: 100vh;
+        padding: 2.5rem 2rem;
+      }
+
+      .container { max-width: 860px; margin: 0 auto; }
+
+      .top-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+      }
+
+      h1 { font-size: 1.5rem; font-weight: 600; color: #f5f5f5; }
+
+      .actions { display: flex; gap: 0.75rem; align-items: center; }
+
+      a.btn, button.btn {
+        display: inline-block;
+        padding: 0.45rem 1.1rem;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        text-decoration: none;
+        cursor: pointer;
+        border: none;
+        font-family: inherit;
+        transition: opacity 0.15s;
+      }
+      a.btn:hover, button.btn:hover { opacity: 0.8; }
+
+      .btn-primary { background: #4ade80; color: #0a0a0a; }
+      .btn-ghost { background: transparent; color: #a3a3a3; border: 1px solid #2a2a2a; }
+      .btn-danger { background: transparent; color: #f87171; border: 1px solid #3f1f1f; }
+
+      .back-link {
+        color: #6b6b6b;
+        text-decoration: none;
+        font-size: 0.875rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        margin-bottom: 1.5rem;
+        transition: color 0.15s;
+      }
+      .back-link:hover { color: #e5e5e5; }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+      }
+
+      thead th {
+        text-align: left;
+        padding: 0.6rem 1rem;
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: #6b6b6b;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        border-bottom: 1px solid #1f1f1f;
+      }
+
+      tbody tr {
+        border-bottom: 1px solid #161616;
+        transition: background 0.1s;
+      }
+      tbody tr:hover { background: #111; }
+
+      td { padding: 0.75rem 1rem; vertical-align: middle; }
+
+      .post-title { font-weight: 500; color: #e5e5e5; }
+
+      .badge {
+        display: inline-block;
+        padding: 0.15rem 0.55rem;
+        border-radius: 999px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .badge-published { background: #14532d; color: #4ade80; }
+      .badge-draft     { background: #1c1c1c; color: #71717a; }
+
+      .post-date { color: #6b6b6b; font-size: 0.8rem; white-space: nowrap; }
+
+      .row-actions { display: flex; gap: 0.5rem; align-items: center; }
+
+      .empty-state {
+        padding: 3rem 0;
+        color: #6b6b6b;
+        text-align: center;
+        font-size: 0.95rem;
+      }
+
+      .error-msg { color: #f87171; padding: 1rem 0; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <a href="/admin" class="back-link">← Admin</a>
+
+      <div class="top-bar">
+        <h1>Posts</h1>
+        <div class="actions">
+          <a href="/admin/posts/new" class="btn btn-primary">New post</a>
+        </div>
+      </div>
+
+      {error ? (
+        <p class="error-msg">Error: {error}</p>
+      ) : posts.length === 0 ? (
+        <p class="empty-state">No posts yet. <a href="/admin/posts/new" style="color:#4ade80">Create one.</a></p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Status</th>
+              <th>Date</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {posts.map((post) => (
+              <tr>
+                <td class="post-title">{post.title}</td>
+                <td>
+                  <span class={post.published ? "badge badge-published" : "badge badge-draft"}>
+                    {post.published ? "Published" : "Draft"}
+                  </span>
+                </td>
+                <td class="post-date">{formatDate(post.createdAt)}</td>
+                <td>
+                  <div class="row-actions">
+                    <a href={`/admin/posts/${post.slug}/edit`} class="btn btn-ghost">Edit</a>
+                    <form method="POST" action={`/admin/api/posts/${post.slug}`} style="margin:0">
+                      <input type="hidden" name="_method" value="delete" />
+                      <button type="submit" class="btn btn-danger"
+                        onclick="return confirm('Delete this post?')">Delete</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  </body>
+</html>

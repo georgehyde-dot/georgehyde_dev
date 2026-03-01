@@ -1,0 +1,286 @@
+---
+/**
+ * src/pages/admin/posts/new.astro — Admin: create a new blog post.
+ *
+ * SSR form page (prerender = false). Submits POST to /admin/api/posts.
+ * Author is hardcoded to "George Hyde" — single-author site.
+ *
+ * Client-side features (zero dependencies, vanilla JS only):
+ *   - Slug auto-generation: title → lowercase-hyphenated slug, user can override
+ *   - Live HTML preview: textarea body → innerHTML of preview div on input
+ *
+ * @decision DEC-EDITOR-003
+ * @title Plain HTML textarea editor, zero dependencies
+ * @status accepted
+ * @rationale Minimises dependencies per project principle #2. Single author
+ *   can write HTML directly. Body is stored as a raw string — format-agnostic.
+ *   Upgrade path to markdown requires only adding a server-side parser; no
+ *   data model or editor changes needed. Live preview uses innerHTML so the
+ *   author sees rendered output while typing.
+ */
+
+export const prerender = false;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>New Post — Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        background: #0a0a0a;
+        color: #e5e5e5;
+        font-family: 'Inter', system-ui, sans-serif;
+        min-height: 100vh;
+        padding: 2.5rem 2rem;
+      }
+
+      .container { max-width: 1100px; margin: 0 auto; }
+
+      .back-link {
+        color: #6b6b6b;
+        text-decoration: none;
+        font-size: 0.875rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        margin-bottom: 1.5rem;
+        transition: color 0.15s;
+      }
+      .back-link:hover { color: #e5e5e5; }
+
+      h1 { font-size: 1.5rem; font-weight: 600; color: #f5f5f5; margin-bottom: 2rem; }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+        align-items: start;
+      }
+
+      @media (max-width: 768px) {
+        .layout { grid-template-columns: 1fr; }
+      }
+
+      .form-section { display: flex; flex-direction: column; gap: 1.25rem; }
+
+      .field { display: flex; flex-direction: column; gap: 0.4rem; }
+
+      label {
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: #6b6b6b;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+      }
+
+      input[type="text"],
+      textarea {
+        background: #111;
+        border: 1px solid #2a2a2a;
+        border-radius: 6px;
+        color: #e5e5e5;
+        font-family: inherit;
+        font-size: 0.9rem;
+        padding: 0.6rem 0.8rem;
+        width: 100%;
+        transition: border-color 0.15s;
+      }
+      input[type="text"]:focus,
+      textarea:focus {
+        outline: none;
+        border-color: #4ade80;
+      }
+
+      textarea {
+        resize: vertical;
+        min-height: 320px;
+        font-family: ui-monospace, 'Cascadia Code', monospace;
+        font-size: 0.85rem;
+        line-height: 1.6;
+      }
+
+      .checkbox-row {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+      }
+      .checkbox-row input[type="checkbox"] { width: 1rem; height: 1rem; accent-color: #4ade80; }
+      .checkbox-row label {
+        font-size: 0.875rem;
+        text-transform: none;
+        letter-spacing: normal;
+        color: #a3a3a3;
+      }
+
+      .form-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+
+      button[type="submit"] {
+        background: #4ade80;
+        color: #0a0a0a;
+        border: none;
+        border-radius: 6px;
+        font-family: inherit;
+        font-size: 0.875rem;
+        font-weight: 600;
+        padding: 0.55rem 1.4rem;
+        cursor: pointer;
+        transition: opacity 0.15s;
+      }
+      button[type="submit"]:hover { opacity: 0.85; }
+
+      a.btn-cancel {
+        display: inline-block;
+        padding: 0.55rem 1.1rem;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        text-decoration: none;
+        color: #a3a3a3;
+        border: 1px solid #2a2a2a;
+        transition: opacity 0.15s;
+      }
+      a.btn-cancel:hover { opacity: 0.8; }
+
+      /* Preview panel */
+      .preview-panel {
+        background: #0f0f0f;
+        border: 1px solid #1f1f1f;
+        border-radius: 8px;
+        padding: 1.5rem;
+        min-height: 400px;
+      }
+
+      .preview-label {
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: #444;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        margin-bottom: 1rem;
+      }
+
+      .preview-content {
+        color: #d4d4d4;
+        font-size: 0.95rem;
+        line-height: 1.75;
+      }
+      .preview-content :global(h2) { font-size: 1.25rem; font-weight: 600; color: #f4f4f5; margin: 1.5rem 0 0.5rem; }
+      .preview-content :global(h3) { font-size: 1.05rem; font-weight: 600; color: #f4f4f5; margin: 1rem 0 0.4rem; }
+      .preview-content :global(p)  { margin-bottom: 1rem; }
+      .preview-content :global(a)  { color: #4ade80; }
+      .preview-content :global(code) {
+        font-family: ui-monospace, monospace;
+        font-size: 0.85em;
+        background: #1a1a1a;
+        border: 1px solid #2a2a2a;
+        border-radius: 3px;
+        padding: 0.1em 0.35em;
+      }
+      .preview-content :global(pre) {
+        background: #141414;
+        border: 1px solid #2a2a2a;
+        border-radius: 6px;
+        padding: 0.9rem 1.1rem;
+        overflow-x: auto;
+        margin-bottom: 1rem;
+      }
+      .preview-empty { color: #333; font-style: italic; font-size: 0.875rem; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <a href="/admin/posts" class="back-link">← Posts</a>
+      <h1>New Post</h1>
+
+      <div class="layout">
+        <form method="POST" action="/admin/api/posts" class="form-section">
+          <div class="field">
+            <label for="title">Title</label>
+            <input
+              type="text"
+              id="title"
+              name="title"
+              required
+              autocomplete="off"
+              placeholder="Post title"
+            />
+          </div>
+
+          <div class="field">
+            <label for="slug">Slug</label>
+            <input
+              type="text"
+              id="slug"
+              name="slug"
+              required
+              autocomplete="off"
+              placeholder="url-safe-slug"
+              pattern="[a-z0-9-]+"
+              title="Lowercase letters, digits, and hyphens only"
+            />
+          </div>
+
+          <div class="field">
+            <label for="body">Body (HTML)</label>
+            <textarea id="body" name="body" placeholder="<p>Write your post here...</p>"></textarea>
+          </div>
+
+          <div class="checkbox-row">
+            <input type="checkbox" id="published" name="published" />
+            <label for="published">Publish immediately</label>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit">Create post</button>
+            <a href="/admin/posts" class="btn-cancel">Cancel</a>
+          </div>
+        </form>
+
+        <div class="preview-panel">
+          <div class="preview-label">Preview</div>
+          <div class="preview-content" id="preview">
+            <span class="preview-empty">Start typing to see a preview…</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Slug auto-generation from title.
+      const titleInput = document.getElementById('title');
+      const slugInput  = document.getElementById('slug');
+      const bodyInput  = document.getElementById('body');
+      const preview    = document.getElementById('preview');
+
+      let slugEdited = false;
+
+      slugInput.addEventListener('input', () => { slugEdited = true; });
+
+      titleInput.addEventListener('input', () => {
+        if (!slugEdited) {
+          slugInput.value = titleInput.value
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, '');
+        }
+      });
+
+      // Live HTML preview.
+      bodyInput.addEventListener('input', () => {
+        const html = bodyInput.value.trim();
+        preview.innerHTML = html || '<span class="preview-empty">Start typing to see a preview…</span>';
+      });
+    </script>
+  </body>
+</html>
