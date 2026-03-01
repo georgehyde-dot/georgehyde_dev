@@ -19,6 +19,10 @@ ENVIRONMENT = "production"
 # Public Clerk key — safe to commit, it's a browser-facing publishable key (not the secret key)
 PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_Y29ycmVjdC13aGlwcGV0LTg5LmNsZXJrLmFjY291bnRzLmRldiQ"
 
+[[kv_namespaces]]
+binding = "BLOG_POSTS"
+id = "63647b278c2345e6a6f252cef09ef8ee"
+
 # Build configuration
 [build]
 command = "npm run build"

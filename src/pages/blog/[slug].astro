@@ -1,0 +1,291 @@
+---
+/**
+ * src/pages/blog/[slug].astro — Public blog post detail page.
+ *
+ * SSR only (prerender = false). Fetches a single post from KV by slug and
+ * renders its HTML body. Returns HTTP 404 for unknown slugs or unpublished
+ * posts, so draft URLs are not guessable by the public.
+ *
+ * @decision DEC-BLOG-002
+ * @title 404 response for missing or unpublished posts
+ * @status accepted
+ * @rationale Redirecting unpublished posts to /blog would leak slug existence
+ *   (timing attack via redirect vs. direct render). A 404 response is simpler,
+ *   correct HTTP semantics, and prevents slug enumeration. The Astro SSR
+ *   pattern for a hard 404 is `return new Response(null, { status: 404 })`.
+ *   Published posts that become drafts are treated identically — no separate
+ *   "gone" (410) status is needed at this stage.
+ */
+
+export const prerender = false;
+
+import type { Runtime } from "@astrojs/cloudflare";
+import type { Env } from "../../lib/kv-store";
+import { getBlogPost, type BlogPost } from "../../lib/kv-store";
+
+const { slug } = Astro.params;
+
+if (!slug) {
+  return new Response(null, { status: 404 });
+}
+
+const runtime = (Astro.locals as Runtime<Env>).runtime;
+const env = runtime.env;
+
+let post: BlogPost | null = null;
+
+try {
+  post = await getBlogPost(env, slug);
+} catch (_e) {
+  return new Response(null, { status: 500 });
+}
+
+// Return 404 for unknown slugs and for unpublished posts.
+if (post === null || !post.published) {
+  return new Response(null, { status: 404 });
+}
+
+const formatDate = (iso: string): string => {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+};
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="description" content={`${post.title} — George Hyde`} />
+    <title>{post.title} — George Hyde</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <main class="container">
+      <nav class="nav">
+        <a href="/blog" class="back-link">
+          <svg class="back-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path
+              d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"
+            ></path>
+          </svg>
+          All posts
+        </a>
+      </nav>
+
+      <article>
+        <header class="post-header">
+          <h1 class="post-title">{post.title}</h1>
+          <div class="post-meta">
+            <span class="post-author">{post.author}</span>
+            <span class="meta-separator" aria-hidden="true">·</span>
+            <time class="post-date" datetime={post.createdAt}>
+              {formatDate(post.createdAt)}
+            </time>
+          </div>
+        </header>
+
+        <div class="post-body" set:html={post.body} />
+      </article>
+    </main>
+
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          "Inter",
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Roboto,
+          Oxygen,
+          Ubuntu,
+          Cantarell,
+          sans-serif;
+        background: #0a0a0a;
+        color: #e5e5e5;
+        line-height: 1.6;
+        min-height: 100vh;
+      }
+
+      .container {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 3rem 2rem;
+      }
+
+      /* Navigation */
+      .nav {
+        margin-bottom: 2.5rem;
+      }
+
+      .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        color: #71717a;
+        text-decoration: none;
+        font-size: 0.875rem;
+        font-weight: 500;
+        transition: color 0.15s ease;
+      }
+
+      .back-link:hover {
+        color: #e5e5e5;
+      }
+
+      .back-icon {
+        width: 1rem;
+        height: 1rem;
+        flex-shrink: 0;
+      }
+
+      /* Post header */
+      .post-header {
+        margin-bottom: 2.5rem;
+        border-bottom: 1px solid rgba(63, 63, 70, 0.5);
+        padding-bottom: 1.5rem;
+      }
+
+      .post-title {
+        font-size: clamp(1.5rem, 5vw, 2.25rem);
+        font-weight: 600;
+        color: #f4f4f5;
+        letter-spacing: -0.02em;
+        line-height: 1.25;
+        margin-bottom: 0.75rem;
+      }
+
+      .post-meta {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.875rem;
+        color: #71717a;
+      }
+
+      .meta-separator {
+        color: #52525b;
+      }
+
+      /* Post body — prose styles for rendered HTML */
+      .post-body {
+        color: #d4d4d4;
+        font-size: 1rem;
+        line-height: 1.75;
+      }
+
+      .post-body :global(h2) {
+        font-size: 1.375rem;
+        font-weight: 600;
+        color: #f4f4f5;
+        margin-top: 2rem;
+        margin-bottom: 0.75rem;
+        letter-spacing: -0.01em;
+      }
+
+      .post-body :global(h3) {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: #f4f4f5;
+        margin-top: 1.5rem;
+        margin-bottom: 0.5rem;
+      }
+
+      .post-body :global(p) {
+        margin-bottom: 1.25rem;
+      }
+
+      .post-body :global(a) {
+        color: #4ade80;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+
+      .post-body :global(a:hover) {
+        color: #86efac;
+      }
+
+      .post-body :global(code) {
+        font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo,
+          Consolas, "DejaVu Sans Mono", monospace;
+        font-size: 0.875em;
+        background: rgba(39, 39, 42, 0.8);
+        border: 1px solid rgba(63, 63, 70, 0.4);
+        border-radius: 0.25rem;
+        padding: 0.125em 0.375em;
+        color: #e5e5e5;
+      }
+
+      .post-body :global(pre) {
+        background: rgba(24, 24, 27, 0.9);
+        border: 1px solid rgba(63, 63, 70, 0.5);
+        border-radius: 0.5rem;
+        padding: 1rem 1.25rem;
+        overflow-x: auto;
+        margin-bottom: 1.25rem;
+      }
+
+      .post-body :global(pre code) {
+        background: none;
+        border: none;
+        padding: 0;
+        font-size: 0.875rem;
+      }
+
+      .post-body :global(blockquote) {
+        border-left: 3px solid #4ade80;
+        padding-left: 1rem;
+        margin: 1.25rem 0;
+        color: #a1a1aa;
+        font-style: italic;
+      }
+
+      .post-body :global(ul),
+      .post-body :global(ol) {
+        padding-left: 1.5rem;
+        margin-bottom: 1.25rem;
+      }
+
+      .post-body :global(li) {
+        margin-bottom: 0.375rem;
+      }
+
+      .post-body :global(hr) {
+        border: none;
+        border-top: 1px solid rgba(63, 63, 70, 0.5);
+        margin: 2rem 0;
+      }
+
+      .post-body :global(img) {
+        max-width: 100%;
+        height: auto;
+        border-radius: 0.5rem;
+        margin: 1rem 0;
+      }
+
+      @media (max-width: 480px) {
+        .container {
+          padding: 2rem 1.25rem;
+        }
+      }
+    </style>
+  </body>
+</html>
