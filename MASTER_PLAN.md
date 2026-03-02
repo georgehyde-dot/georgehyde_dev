@@ -61,7 +61,7 @@ project's institutional memory.
 ## Active Initiatives
 
 ### Initiative: Clerk Auth Integration
-**Status:** active
+**Status:** completed
 **Started:** 2026-02-20
 **Goal:** Add Clerk authentication to protect a blog admin page, while keeping all public pages static.
 
@@ -273,7 +273,7 @@ Main is sacred. Each phase works in its own worktree:
 - **No features gated on free tier** that affect this use case.
 
 ### Initiative: Blog System
-**Status:** active
+**Status:** completed
 **Started:** 2026-02-28
 **Goal:** Build a complete blog with public reading pages and an auth-protected admin editor, using existing KV infrastructure.
 
@@ -496,7 +496,7 @@ All P0 requirements satisfied. Site owner can create, edit, delete, and publish/
 - Implementation note: HTML forms cannot send PUT/DELETE, so update/delete API uses POST with `_method=delete` hidden field (method-override pattern). All P1 nice-to-haves delivered (live preview, slug auto-gen, delete confirmation dialog).
 
 #### Phase 3: Deployment Verification
-**Status:** planned
+**Status:** completed (2026-03-01)
 **Decision IDs:** none (operational phase)
 **Requirements:** all P0 requirements (end-to-end verification)
 **Issues:** #5
@@ -536,7 +536,7 @@ All P0 requirements satisfied. Site owner can create, edit, delete, and publish/
 - `dist/_worker.js/` — Build output verification
 
 ##### Decision Log
-<!-- Guardian appends here after phase completion -->
+- No new architectural decisions. Operational fixes applied: SESSION KV namespace binding for Clerk session storage, .assetsignore to exclude build artifacts from static asset uploads. Full CRUD verified end-to-end on wrangler dev. Build succeeds.
 
 #### Blog System Worktree Strategy
 
@@ -552,12 +552,115 @@ Main is sacred. Each phase works in its own worktree:
 - [Astro Server Endpoints](https://docs.astro.build/en/guides/endpoints/#server-endpoints-api-routes) — API routes for form handling
 - [KV Metadata](https://developers.cloudflare.com/kv/api/write-key-value-pairs/#metadata) — up to 1KB per key, returned by list()
 
+### Initiative: Homepage and Progress UI Updates
+**Status:** completed
+**Started:** 2026-03-01
+**Completed:** 2026-03-01
+**Goal:** Add blog navigation to the homepage and update the progress tracker with completed Clerk auth and blog system milestones.
+
+> The blog system is live but invisible from the homepage -- there is no link to /blog anywhere on index.astro. Meanwhile, the progress tracker still reflects only the original three milestones (Initial Setup, Landing Page, Progress Tracker) and does not show the Clerk auth or blog work that was completed. These two small UI changes make the site reflect its current state.
+
+**Dominant Constraint:** simplicity
+
+#### Goals
+- REQ-GOAL-201: Homepage links to /blog so readers can discover blog content
+- REQ-GOAL-202: Progress tracker reflects all completed work including Clerk auth and blog system
+
+#### Non-Goals
+- REQ-NOGO-201: Redesigning the progress tracker layout — content update only
+- REQ-NOGO-202: Adding new planned milestones beyond what already exists — only adding completed work
+- REQ-NOGO-203: Changing the blog pages themselves — this is homepage/progress UI only
+
+#### Requirements
+
+**Must-Have (P0)**
+
+- REQ-P0-201: Blog link on homepage in the links section alongside GitHub, LinkedIn, Email
+  Acceptance: Given the homepage loads, When a reader sees the links section, Then a "Blog" link is visible that navigates to /blog
+
+- REQ-P0-202: Clerk Auth milestone added to progress tracker as completed
+  Acceptance: Given the progress page loads, When a reader views the milestones, Then "Clerk Auth Integration" appears as completed with date 2026-02-28
+
+- REQ-P0-203: Blog System milestone added to progress tracker as completed
+  Acceptance: Given the progress page loads, When a reader views the milestones, Then "Blog System" appears as completed with date 2026-03-01
+
+- REQ-P0-204: Existing milestone IDs and positions adjusted for new entries
+  Acceptance: Given new milestones are inserted, When the progress page renders, Then all milestone dots are evenly spaced and the progress bar reflects updated completion (5/9)
+
+#### Definition of Done
+
+Homepage shows a Blog link alongside GitHub, LinkedIn, Email that navigates to /blog. Progress page shows 5 completed milestones (was 3) including Clerk Auth and Blog System entries. Progress bar reflects the updated completion percentage. Both pages still prerender. `npm run build` succeeds.
+
+#### Architectural Decisions
+
+No new architectural decisions. These are content updates to existing pages using established patterns.
+
+#### Phase 1: Blog Link + Progress Entries
+**Status:** completed (2026-03-01)
+**Decision IDs:** none
+**Requirements:** REQ-P0-201, REQ-P0-202, REQ-P0-203, REQ-P0-204
+**Issues:** #6
+**Definition of Done:**
+- REQ-P0-201 satisfied: Blog link visible in homepage links section, navigates to /blog
+- REQ-P0-202 satisfied: Clerk Auth milestone shown as completed on progress page
+- REQ-P0-203 satisfied: Blog System milestone shown as completed on progress page
+- REQ-P0-204 satisfied: All milestones evenly spaced, progress bar correct
+
+##### Planned Decisions
+- No new architecture decisions. Content updates only.
+
+##### Work Items
+
+**W1-1: Add blog link to homepage links section (src/pages/index.astro)**
+- Insert a fourth link in the `.links` div, after the Email link
+- Use the same pattern as existing links: `<a href="/blog" class="link">` with an SVG icon and "Blog" text
+- Use a document/article SVG icon (no external dependency needed)
+- No `target="_blank"` since this is an internal link
+
+**W1-2: Add Clerk Auth milestone to progress tracker (src/pages/progress.astro)**
+- Insert new milestone object after Progress Tracker entry (id 3), shift existing ids 4-7 to 5-8
+- id: 4, title: "Clerk Auth Integration", status: "completed", completedDate: "2026-02-28"
+- position: { x: 52, y: 70 }
+- extended_description covers middleware, createRouteMatcher, free tier
+
+**W1-3: Add Blog System milestone to progress tracker (src/pages/progress.astro)**
+- Insert after Clerk Auth entry
+- id: 5, title: "Blog System", status: "completed", completedDate: "2026-03-01"
+- position: { x: 61, y: 70 }
+- extended_description covers KV storage, public pages, admin editor, zero deps
+
+**W1-4: Renumber and reposition remaining milestones (src/pages/progress.astro)**
+- Email subscription: id 6, x: 70
+- Pathfinding Visualizer: id 7, x: 79
+- Photo Gallery: id 8, x: 88
+- User accounts: id 9, x: 95
+- Verify progress bar calculation handles new positions correctly
+
+##### Critical Files
+- `src/pages/index.astro` — Add blog link to the links section
+- `src/pages/progress.astro` — Add two milestones, renumber IDs, shift positions
+
+##### Decision Log
+- No new architectural decisions. Content-only changes: blog link added to homepage links section, two completed milestones added to progress tracker, existing milestones renumbered.
+
+#### Homepage and Progress UI Updates Worktree Strategy
+
+Main is sacred. Single phase works in its own worktree:
+- **Phase 1:** `{project_root}/.worktrees/homepage-progress-ui` on branch `homepage-progress-ui`
+
+#### Homepage and Progress UI Updates References
+
+- No external references needed. Changes use existing patterns in index.astro and progress.astro.
+
 ---
 
 ## Completed Initiatives
 
 | Initiative | Period | Phases | Key Decisions | Archived |
 |-----------|--------|--------|---------------|----------|
+| Clerk Auth Integration | 2026-02-20 to 2026-02-28 | 2 (Infrastructure, Auth Layer) | DEC-ASTRO-001, DEC-CLERK-002, DEC-CLERK-003, DEC-ENV-003 | No |
+| Blog System | 2026-02-28 to 2026-03-01 | 3 (Data Model, Admin Editor, Deploy Verify) | DEC-KV-001, DEC-URL-002, DEC-EDITOR-003, DEC-RENDER-004, DEC-ADMIN-001, DEC-ADMIN-002, DEC-BLOG-001, DEC-BLOG-002 | No |
+| Homepage and Progress UI Updates | 2026-03-01 | 1 (Blog Link + Progress Entries) | None (content only) | No |
 
 ---
 
