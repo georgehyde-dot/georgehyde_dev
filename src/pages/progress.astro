@@ -39,43 +39,63 @@ const milestones = [
     },
     {
         id: 4,
+        title: "Clerk Auth Integration",
+        description: "Server-side auth middleware protecting admin routes via Clerk",
+        status: "completed",
+        completedDate: "2026-02-28",
+        position: { x: 52, y: 70 },
+        extended_description:
+            "Integrated Clerk auth with Astro middleware on Cloudflare Workers. Uses createRouteMatcher to protect /admin/* routes server-side. Free tier (10k MAU) is effectively unlimited for a single-user personal site.",
+    },
+    {
+        id: 5,
+        title: "Blog System",
+        description: "Public blog pages and auth-protected admin editor with Cloudflare KV",
+        status: "completed",
+        completedDate: "2026-03-01",
+        position: { x: 61, y: 70 },
+        extended_description:
+            "Public reading pages at /blog and /blog/[slug], plus admin editor at /admin/posts with create, edit, publish/unpublish, and delete. Uses Cloudflare KV with metadata for O(1) listing. Zero new dependencies.",
+    },
+    {
+        id: 6,
         title: "Email subscription service based on Zero to Production in Rust",
         description:
             "Functional best practices included rust email subscription service",
         status: "in-progress",
         completedDate: null,
-        position: { x: 52, y: 70 },
+        position: { x: 70, y: 70 },
         extended_description:
             "Making good progress on this, just taking my time and applying best practices to a few projects at a time as I'm going along.",
     },
     {
-        id: 5,
+        id: 7,
         title: "Pathfinding Algorithm Visualizer",
         description:
             "Visualize and explore different pathfinding algorithms, with an interactive demo",
         status: "planned",
         completedDate: null,
-        position: { x: 61, y: 70 },
+        position: { x: 79, y: 70 },
         extended_description: "",
     },
     {
-        id: 6,
+        id: 8,
         title: "Photo Gallery From Walks with my Dog Loki",
         description:
             "A fun rolling gallery of photos from walks with my dog Loki, randomly choosing new images daily",
         status: "planned",
         completedDate: null,
-        position: { x: 70, y: 70 },
+        position: { x: 88, y: 70 },
         extended_description: "",
     },
     {
-        id: 7,
+        id: 9,
         title: "User accounts with favorite images and the ability to share an article",
         description:
             "User accounts with the ability to save favorite images and share articles with others",
         status: "planned",
         completedDate: null,
-        position: { x: 79, y: 70 },
+        position: { x: 97, y: 70 },
         extended_description: "",
     },
 ];
