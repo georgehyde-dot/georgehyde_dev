@@ -13,7 +13,7 @@ routes = [
     { pattern = "georgehyde.dev", custom_domain = true },
 ]
 
-# Environment variables (if needed)
+# Environment variables
 [vars]
 ENVIRONMENT = "production"
 # Public Clerk key — safe to commit, it's a browser-facing publishable key (not the secret key)
@@ -22,6 +22,11 @@ PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_Y29ycmVjdC13aGlwcGV0LTg5LmNsZXJrLmFjY291
 [[kv_namespaces]]
 binding = "BLOG_POSTS"
 id = "63647b278c2345e6a6f252cef09ef8ee"
+
+# Required by @astrojs/cloudflare for Clerk session storage
+[[kv_namespaces]]
+binding = "SESSION"
+id = "55890dbab69144b4bfe60543c5f3ddbb"
 
 # Build configuration
 [build]
