@@ -3,7 +3,8 @@
  * src/pages/admin/posts/new.astro — Admin: create a new blog post.
  *
  * SSR form page (prerender = false). Submits POST to /admin/api/posts.
- * Author is hardcoded to "George Hyde" — single-author site.
+ * The API route owns validation, stored-HTML policy, and owner authorization;
+ * this page remains a minimal form surface for the single-author site.
  *
  * Client-side features (zero dependencies, vanilla JS only):
  *   - Slug auto-generation: title → lowercase-hyphenated slug, user can override
@@ -163,8 +164,6 @@ import PostEditor from "../../../components/PostEditor.astro";
               required
               autocomplete="off"
               placeholder="url-safe-slug"
-              pattern="[a-z0-9-]+"
-              title="Lowercase letters, digits, and hyphens only"
             />
           </div>
 

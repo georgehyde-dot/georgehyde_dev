@@ -30,6 +30,8 @@ import type { KVNamespace } from "@cloudflare/workers-types";
 /** Subset of the Cloudflare Worker env used by this module. */
 export interface Env {
   BLOG_POSTS: KVNamespace;
+  ENVIRONMENT?: string;
+  ADMIN_OWNER_USER_ID?: string;
 }
 
 // ---------------------------------------------------------------------------

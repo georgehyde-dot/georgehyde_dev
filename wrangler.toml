@@ -18,6 +18,8 @@ routes = [
 ENVIRONMENT = "production"
 # Public Clerk key — safe to commit, it's a browser-facing publishable key (not the secret key)
 PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_Y29ycmVjdC13aGlwcGV0LTg5LmNsZXJrLmFjY291bnRzLmRldiQ"
+# Non-secret Clerk user ID for the single site owner. Blank production config denies admin access.
+ADMIN_OWNER_USER_ID = ""
 
 [[kv_namespaces]]
 binding = "BLOG_POSTS"

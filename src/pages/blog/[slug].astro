@@ -2,9 +2,10 @@
 /**
  * src/pages/blog/[slug].astro — Public blog post detail page.
  *
- * SSR only (prerender = false). Fetches a single post from KV by slug and
- * renders its HTML body. Returns HTTP 404 for unknown slugs or unpublished
- * posts, so draft URLs are not guessable by the public.
+ * SSR only (prerender = false). Fetches a renderable public post through
+ * src/lib/public-blog.ts and renders only the policy-checked body HTML.
+ * Returns HTTP 404 for unknown slugs or unpublished posts, so draft URLs are
+ * not guessable by the public.
  *
  * @decision DEC-BLOG-002
  * @title 404 response for missing or unpublished posts
@@ -20,30 +21,30 @@
 export const prerender = false;
 
 import type { Runtime } from "@astrojs/cloudflare";
-import type { Env } from "../../lib/kv-store";
-import { getBlogPost, type BlogPost } from "../../lib/kv-store";
-
-const { slug } = Astro.params;
-
-if (!slug) {
-  return new Response(null, { status: 404 });
-}
+import type { Env } from "../../lib/kv-store.ts";
+import { getPublishedBlogPost } from "../../lib/public-blog.ts";
 
 const runtime = (Astro.locals as Runtime<Env>).runtime;
 const env = runtime.env;
 
-let post: BlogPost | null = null;
+const { slug } = Astro.params;
+let result: Awaited<ReturnType<typeof getPublishedBlogPost>>;
 
 try {
-  post = await getBlogPost(env, slug);
+  result = await getPublishedBlogPost(env, slug);
 } catch (_e) {
   return new Response(null, { status: 500 });
 }
 
-// Return 404 for unknown slugs and for unpublished posts.
-if (post === null || !post.published) {
+if (result.status === 404) {
   return new Response(null, { status: 404 });
 }
+
+if (result.status === 500) {
+  return new Response(null, { status: 500 });
+}
+
+const { post, safeBody } = result;
 
 const formatDate = (iso: string): string => {
   const d = new Date(iso);
@@ -95,7 +96,7 @@ const formatDate = (iso: string): string => {
           </div>
         </header>
 
-        <div class="post-body" set:html={post.body} />
+        <div class="post-body" set:html={safeBody} />
       </article>
     </main>
 

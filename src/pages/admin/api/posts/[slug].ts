@@ -11,40 +11,55 @@
  *
  * Returns 404 if the post does not exist. Returns 405 for non-POST requests.
  *
- * All /admin/* routes are protected by Clerk middleware (src/middleware.ts).
+ * Middleware protects /admin/*, and this handler repeats the same centralized
+ * owner authorization for direct route-handler execution in tests.
  *
  * @decision DEC-ADMIN-001
  * @title PRG pattern (303 redirect) for all admin form mutations
  * @status accepted
  * @rationale See src/pages/admin/api/posts/index.ts for full rationale.
  *
- * @decision DEC-ADMIN-002
- * @title Server-side slug validation with /^[a-z0-9-]+$/ allowlist
+ * @decision DEC-SH-002
+ * @title Shared validation and stored HTML policy for admin writes
  * @status accepted
  * @rationale See src/pages/admin/api/posts/index.ts for full rationale.
- *   Applied here to the route param slug before any KV operation.
  */
 
 import type { APIContext } from "astro";
 import type { Runtime } from "@astrojs/cloudflare";
-import type { Env } from "../../../../lib/kv-store";
-import { getBlogPost, putBlogPost, deleteBlogPost } from "../../../../lib/kv-store";
-
-const SLUG_RE = /^[a-z0-9-]+$/;
+import type { Env } from "../../../../lib/kv-store.ts";
+import { getBlogPost, putBlogPost, deleteBlogPost } from "../../../../lib/kv-store.ts";
+import {
+  adminAuthorizationResponse,
+  authorizeAdminOwner,
+} from "../../../../lib/admin-auth.ts";
+import {
+  validateRouteSlug,
+  validateUpdatePostForm,
+} from "../../../../lib/blog-validation.ts";
 
 export const prerender = false;
 
-export async function POST(context: APIContext): Promise<Response> {
-  const { slug } = context.params;
+type AdminLocals = Runtime<Env> & {
+  auth?: () => { userId?: string | null };
+};
 
-  if (!slug || !SLUG_RE.test(slug)) {
-    return new Response("Invalid slug", { status: 400 });
+export async function POST(context: APIContext): Promise<Response> {
+  const routeSlug = validateRouteSlug(context.params.slug);
+
+  if (!routeSlug.ok) {
+    return new Response(routeSlug.error, { status: 400 });
   }
 
-  const runtime = (context.locals as Runtime<Env>).runtime;
+  const locals = context.locals as AdminLocals;
+  const runtime = locals.runtime;
   const env = runtime.env;
+  const owner = authorizeAdminOwner(locals.auth?.().userId, env);
+  if (!owner.ok) {
+    return adminAuthorizationResponse(owner);
+  }
 
-  const existing = await getBlogPost(env, slug);
+  const existing = await getBlogPost(env, routeSlug.value);
   if (existing === null) {
     return new Response("Post not found", { status: 404 });
   }
@@ -59,24 +74,20 @@ export async function POST(context: APIContext): Promise<Response> {
   const method = (formData.get("_method") as string | null)?.toLowerCase();
 
   if (method === "delete") {
-    await deleteBlogPost(env, slug);
+    await deleteBlogPost(env, routeSlug.value);
     return context.redirect("/admin/posts", 303);
   }
 
-  // Update path: merge form fields over existing post.
-  const title = (formData.get("title") as string | null)?.trim() ?? existing.title;
-  const body = (formData.get("body") as string | null) ?? existing.body;
-  const published = formData.get("published") === "on";
-
-  if (!title) {
-    return new Response("Title is required", { status: 400 });
+  const input = validateUpdatePostForm(formData);
+  if (!input.ok) {
+    return new Response(input.error, { status: 400 });
   }
 
   await putBlogPost(env, {
     ...existing,
-    title,
-    body,
-    published,
+    title: input.value.title,
+    body: input.value.body,
+    published: input.value.published,
     updatedAt: new Date().toISOString(),
   });
 

@@ -22,8 +22,9 @@ export const prerender = false;
 
 import type { Runtime } from "@astrojs/cloudflare";
 import PostEditor from "../../../../components/PostEditor.astro";
-import type { Env } from "../../../../lib/kv-store";
-import { getBlogPost, type BlogPost } from "../../../../lib/kv-store";
+import type { Env } from "../../../../lib/kv-store.ts";
+import { getBlogPost, type BlogPost } from "../../../../lib/kv-store.ts";
+import { validateStoredHtml } from "../../../../lib/html-policy.ts";
 
 const { slug } = Astro.params;
 
@@ -43,6 +44,11 @@ try {
 
 if (post === null) {
   return Astro.redirect("/admin/posts", 303);
+}
+
+const storedBody = validateStoredHtml(post.body);
+if (!storedBody.ok) {
+  return new Response("Stored post body violates HTML policy", { status: 409 });
 }
 
 const actionUrl = `/admin/api/posts/${slug}`;
@@ -204,7 +210,7 @@ const actionUrl = `/admin/api/posts/${slug}`;
             <span class="meta-note">Slug is fixed after creation to preserve published URLs.</span>
           </div>
 
-          <PostEditor initialBody={post.body} />
+          <PostEditor initialBody={storedBody.value} />
 
           <div class="checkbox-row">
             <input

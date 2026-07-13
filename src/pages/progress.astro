@@ -783,12 +783,6 @@ const milestoneProgressPercentage = (completedCount / totalCount) * 100;
                 const milestones = document.querySelectorAll(".milestone");
 
                 milestones.forEach((milestone) => {
-                    milestone.addEventListener("click", () => {
-                        const id = milestone.dataset.milestoneId;
-                        console.log(`Clicked milestone ${id}`);
-                        // Future: Could open a modal with more details
-                    });
-
                     // Add tooltip positioning logic
                     const tooltip =
                         milestone.querySelector(".milestone-tooltip");
@@ -833,31 +827,22 @@ const milestoneProgressPercentage = (completedCount / totalCount) * 100;
 
                 // Animate progress path on load
                 const progressPath = document.querySelector(".path-progress");
-                console.log("Progress path element found:", progressPath);
 
                 if (progressPath) {
                     const progressValue = progressPercentage;
-                    console.log("Progress value:", progressValue);
 
                     // Get the actual path length for accurate progress
                     const pathLength = progressPath.getTotalLength();
-                    console.log("Path length:", pathLength);
 
                     // Set up the stroke-dasharray to cover the full path
                     progressPath.style.strokeDasharray = pathLength;
-                    console.log("Set stroke-dasharray to:", pathLength);
 
                     // Calculate how much of the path to show based on progress
                     const progressOffset =
                         pathLength * (1 - progressValue / 100);
-                    console.log("Progress offset calculated:", progressOffset);
 
                     setTimeout(() => {
                         progressPath.style.strokeDashoffset = progressOffset;
-                        console.log(
-                            "Applied stroke-dashoffset:",
-                            progressOffset,
-                        );
                     }, 100);
                 } else {
                     console.error("Progress path element not found!");

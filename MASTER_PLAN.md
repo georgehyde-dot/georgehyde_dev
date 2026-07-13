@@ -55,6 +55,11 @@ project's institutional memory.
 | 2026-02-28 | DEC-BLOG-002 | blog-system | 404 response for missing or unpublished posts | Redirect would leak slug existence (timing attack). 404 is correct HTTP semantics and prevents slug enumeration. Unpublished posts treated same as missing. |
 | 2026-03-01 | DEC-ADMIN-001 | blog-system | PRG pattern (303) for all admin form mutations | POST → Redirect → GET prevents double-submission on back/refresh. Standard web hygiene for HTML forms without fetch. All create/update/delete redirect to /admin/posts with 303. |
 | 2026-03-01 | DEC-ADMIN-002 | blog-system | Server-side slug validation with /^[a-z0-9-]+$/ regex | Slug is used as KV key suffix and URL path segment. Strict allowlist prevents path traversal and malformed KV keys. Client-side auto-generation is UX only — not trusted server-side. |
+| 2026-07-13 | DEC-SH-001 | site-hardening | Preserve commit 8012af5 as the rich-editor and LinkedIn-removal baseline | The deployed baseline is review input, not disposable work. Hardening must build on it, not roll it back or reintroduce removed LinkedIn UI. |
+| 2026-07-13 | DEC-SH-002 | site-hardening | Centralize blog validation and stored-HTML policy in shared helpers | Slug, title, body, publish-state, and HTML safety checks currently risk drifting across API routes and render paths. One helper authority keeps admin writes and public rendering aligned. |
+| 2026-07-13 | DEC-SH-003 | site-hardening | Enforce single-owner admin authorization on top of Clerk auth | Clerk remains the authentication provider, but admin mutation authority belongs to one configured owner user. This closes the gap where any authenticated Clerk user could reach admin write surfaces. |
+| 2026-07-13 | DEC-SH-004 | site-hardening | Use Node built-in test runner for focused security and configuration tests | Local Node v24.8.0 is sufficient for dependency-free tests. This adds automated coverage without introducing a new testing framework dependency. |
+| 2026-07-13 | DEC-SH-005 | site-hardening | Route build, validation, preview, deploy, and provider operations through Concrete | `.concrete/` is initialized and guard-enforced. Concrete is the operational authority; direct npm build/test/deploy or Wrangler deploy paths must not bypass it. |
 
 ---
 
@@ -655,6 +660,263 @@ Main is sacred. Single phase works in its own worktree:
 #### Homepage and Progress UI Updates References
 
 - No external references needed. Changes use existing patterns in index.astro and progress.astro.
+
+---
+
+### Initiative: Site Hardening and Blog Editor Audit
+**Status:** active
+**Started:** 2026-07-13
+**Workflow:** codex-site-hardening
+**Runtime work item:** wi-initial-planning maps to W-SH-1
+**Baseline:** `8012af528320bddb322db3b582a62a697c27e756` (`feat: improve blog editor and remove LinkedIn`)
+**Goal:** Audit the Astro/Cloudflare site, preserve the deployed rich-editor baseline, remove confirmed dead or duplicated code, improve the admin blog editor, add focused automated tests, and harden public rendering, owner-only admin authorization, input validation, stored HTML handling, and configuration correctness without changing retained Clerk auth behavior or deploying production.
+
+> The site now has real write surfaces: admin forms write HTML into Cloudflare KV and public pages render that stored HTML. The current baseline is useful but lightly tested. The root problem is not merely editor polish; it is that security-sensitive rules are spread across routes and mostly unproved by automated checks. Hardening should make the intended single-owner, raw-HTML blog model explicit and testable while keeping the codebase small.
+
+**Complexity Tier:** Tier 3 (Full) — cross-cutting auth, rendering, validation, tests, config, and Concrete authority.
+
+**Challenge / Simpler Path:** A full redesign of the blog editor or data model would add risk without solving the immediate problem. The simpler high-value path is to keep the existing HTML body storage contract, preserve the rich editor, centralize the rules that protect it, remove duplication only where it reduces drift, and prove those rules with focused tests plus Concrete validation.
+
+**Dominant Constraints:** security and simplicity; no production deploy; no dependency growth unless a future planner decision explicitly approves it.
+
+#### Research Gate
+
+Local research was sufficient for this planning slice:
+- `MASTER_PLAN.md`, project `AGENTS.md`, Concrete skill instructions, `concrete status`, `cc-policy stage-packet`, current source files, and commit `8012af5` were inspected.
+- Local Node is v24.8.0, so the built-in `node --test` runner is viable for dependency-free focused tests.
+- No external research is needed because this plan does not choose a new hosted service or third-party library. If implementation changes Clerk or Cloudflare semantics beyond the existing integration pattern, the implementer must verify against official installed behavior or official docs before coding that change.
+
+#### Goals
+
+- REQ-SH-GOAL-001: Preserve commit `8012af5` behavior as the baseline while reviewing and hardening it.
+- REQ-SH-GOAL-002: Only the configured site owner can perform admin write operations.
+- REQ-SH-GOAL-003: Public blog rendering remains SSR via KV and never exposes drafts.
+- REQ-SH-GOAL-004: Blog input validation and stored-HTML policy are centralized and covered by automated tests.
+- REQ-SH-GOAL-005: Admin authoring becomes materially more ergonomic without adding a client framework or editor dependency.
+- REQ-SH-GOAL-006: Confirmed dead or duplicated code is removed, not left beside replacement mechanisms.
+- REQ-SH-GOAL-007: Concrete remains the authority for validation and deploy-adjacent operations.
+
+#### Non-Goals
+
+- REQ-SH-NOGO-001: Production deployment. `npm run deploy`, direct `wrangler deploy`, and `concrete deploy --environment prod` are out of scope without separate user authorization.
+- REQ-SH-NOGO-002: Replacing Clerk, changing the retained local Clerk auth behavior, or building a custom auth system.
+- REQ-SH-NOGO-003: Multi-author roles, team authorization, comments, RSS, image uploads, or a CMS migration.
+- REQ-SH-NOGO-004: Adding a heavy editor, CSS framework, client framework, or broad sanitizer dependency in this slice.
+- REQ-SH-NOGO-005: Removing candidate code on intuition. Dead-code removal requires local proof from references, tests, and build behavior.
+
+#### Requirements
+
+**Must-Have (P0)**
+
+- REQ-SH-P0-001: Baseline preservation
+  Acceptance: Given current HEAD is `8012af5`, When hardening lands, Then the rich editor remains present, the Blog homepage link remains present, LinkedIn UI is not reintroduced, and public static pages still declare `prerender = true`.
+
+- REQ-SH-P0-002: Single-owner admin authorization
+  Acceptance: Given Clerk middleware authenticates a request, When the Clerk `userId` does not match the configured owner authority, Then `/admin/*` write and management surfaces deny access. Given the owner user matches, Then existing admin workflows continue.
+
+- REQ-SH-P0-003: Centralized input validation
+  Acceptance: Given create and update API routes receive form data, When title, slug, body, publish state, and route slug are validated, Then both routes call the same validation authority instead of duplicating regexes or ad hoc parsing.
+
+- REQ-SH-P0-004: Stored HTML handling policy
+  Acceptance: Given stored post body HTML is rendered with `set:html`, When admin writes occur, Then the body passes one documented HTML policy authority first. The policy must explicitly cover script tags, event-handler attributes, unsafe URL schemes, empty bodies, and maximum body size.
+
+- REQ-SH-P0-005: Editor ergonomics
+  Acceptance: Given the owner writes or edits a post, When using the editor, Then formatting, link entry, paste/preview synchronization, save behavior, and mobile layout are at least as capable as the `8012af5` editor and no longer require hand-writing common HTML.
+
+- REQ-SH-P0-006: Duplicate/dead code cleanup
+  Acceptance: Given duplication is confirmed in admin form layout/styles, slug validation, HTML policy, or debug-only progress scripts, When replacement helpers/components land, Then superseded copies are removed in the same change.
+
+- REQ-SH-P0-007: Focused automated tests
+  Acceptance: Given no test suite exists today, When this slice lands, Then a dependency-free package test script exercises validation, owner authorization, KV listing/sorting/filtering, stored-HTML policy, and config invariants.
+
+- REQ-SH-P0-008: Concrete validation
+  Acceptance: Given `.concrete/` is initialized with guard enforcement, When validation/build/preview/deploy-adjacent checks are needed, Then agents use Concrete commands or exact Concrete-authorized commands only, and `concrete validate` passes before Guardian landing.
+
+- REQ-SH-P0-009: Configuration correctness
+  Acceptance: Given Wrangler and Astro config are loaded, When tests inspect config, Then `BLOG_POSTS`, `SESSION`, Cloudflare adapter settings, node compatibility, and admin owner configuration behavior are validated without exposing secrets or deploying.
+
+**Nice-to-Have (P1)**
+
+- REQ-SH-P1-001: Shared admin post form component replaces duplicated new/edit form shells if it reduces code and preserves route clarity.
+- REQ-SH-P1-002: Editor toolbar affordances become accessible enough for keyboard and screen-reader operation without importing an icon library.
+- REQ-SH-P1-003: Progress page debug logs are removed if confirmed as development-only noise.
+
+#### Unknowns and Ambiguities
+
+- The real Clerk owner user ID is not present in this plan. Implementation should support a configured owner ID and test with fixtures; production deployment remains blocked until the real value and deployment approval are provided.
+- Concrete may or may not include the new focused test script in `concrete validate` automatically. If not, implementer/reviewer may run only the repo-local test command that Concrete policy permits; otherwise they must report the Concrete blocker instead of bypassing it.
+- "Dead code" is intentionally narrow: only remove code proven unused or superseded by the new authority in this slice.
+
+#### Architectural Decisions
+
+- DEC-SH-001: Preserve commit `8012af5` as the hardening baseline.
+  Addresses: REQ-SH-P0-001.
+
+- DEC-SH-002: Centralize validation and stored-HTML policy.
+  Addresses: REQ-SH-P0-003, REQ-SH-P0-004, REQ-SH-P0-006.
+
+- DEC-SH-003: Enforce single-owner admin authorization on top of Clerk.
+  Addresses: REQ-SH-P0-002.
+
+- DEC-SH-004: Use Node built-in test runner for focused coverage.
+  Addresses: REQ-SH-P0-007.
+
+- DEC-SH-005: Use Concrete as operational authority.
+  Addresses: REQ-SH-P0-008, REQ-SH-P0-009.
+
+#### Alternatives Considered
+
+- **Stored HTML option A: Trust raw owner HTML only.** Lowest code, but leaves no mechanical guard against accidental unsafe markup or future non-owner write paths.
+- **Stored HTML option B: Add a sanitizer dependency.** Stronger parsing story, but conflicts with the minimal-dependency constraint and requires network/dependency approval.
+- **Recommended for W-SH-1: Central HTML policy without new dependency.** Keep HTML as the data contract, enforce owner-only writes, and add a shared policy that rejects clearly executable or unsafe constructs before storage. If future requirements demand arbitrary user-generated HTML, create a new planner decision for an audited sanitizer dependency instead of hand-expanding this helper into a general sanitizer.
+
+- **Test option A: Add Vitest/Playwright.** Better browser ergonomics, higher dependency and setup cost.
+- **Recommended for W-SH-1: Node built-in tests plus Concrete validation.** This is enough for the security/config invariants in this slice. Browser automation can be a later initiative if visual regressions become frequent.
+
+#### State Authority Map
+
+| State Domain | Canonical Authority | Adjacent Readers/Writers | Notes |
+|--------------|---------------------|--------------------------|-------|
+| Blog post persistence | `src/lib/kv-store.ts`, Cloudflare KV binding `BLOG_POSTS`, keys `post:{slug}` | Public blog pages, admin list, admin API routes | Keep metadata listing as the KV authority; do not add a parallel index. |
+| Blog input validation | New shared helper under `src/lib/` | `src/pages/admin/api/posts/index.ts`, `src/pages/admin/api/posts/[slug].ts`, tests | Replaces duplicated `SLUG_RE` and route-local parsing rules. |
+| Stored HTML policy | New shared helper under `src/lib/` | Admin API routes, `PostEditor.astro`, `src/pages/blog/[slug].astro`, tests | Public rendering may use `set:html` only for body content that passed this policy. |
+| Admin authorization | Clerk middleware plus new owner authorization helper/config | `src/middleware.ts`, admin pages, admin API routes, Wrangler vars | Clerk stays as auth provider; owner ID controls admin authority. |
+| Public rendering | `src/pages/blog/index.astro`, `src/pages/blog/[slug].astro` | KV store and stored-HTML policy | Drafts and missing posts remain indistinguishable 404s. |
+| Editor DOM state | `src/components/PostEditor.astro` and optional shared form component | Admin create/edit pages | Hidden `body` field remains the form submission contract. |
+| Operational validation | Concrete CLI and `cc-policy` test/evaluation state | Implementer, reviewer, guardian | No direct deploy/build/provider commands outside Concrete authorization. |
+
+#### Removal Targets
+
+- Duplicated slug regex and form parsing in both admin API routes.
+- Duplicated admin new/edit form shell and styles when a shared component reduces code without hiding route-specific behavior.
+- Unchecked stored-HTML assumptions around `set:html`, preview `innerHTML`, and link creation.
+- Debug-only `console.log` statements on `src/pages/progress.astro` if verified nonfunctional.
+- Any reintroduced LinkedIn UI or old textarea-only editor path is forbidden.
+
+#### Wave Decomposition
+
+**Dependency Graph:** W-SH-1 has no source-work deps. Guardian provision must run before implementation; reviewer must approve before Guardian landing.
+
+**Critical Path:** planner scope/evaluation -> guardian provision -> implementer W-SH-1 -> reviewer -> guardian land.
+
+**Max Width:** 1. This slice intentionally avoids parallel implementation because the same admin/blog files carry validation, editor, and rendering authority.
+
+##### W-SH-1: Whole-Site Hardening, Editor Ergonomics, and Tests
+
+- **Runtime ID:** `wi-initial-planning`
+- **Weight:** XL
+- **Gate:** review
+- **Deps:** none
+- **Integration:** `src/lib/kv-store.ts`, new `src/lib/` validation/HTML/auth helpers, `src/middleware.ts`, admin API routes, admin create/edit pages, `src/components/PostEditor.astro`, public blog routes, `package.json`, `wrangler.toml`, tests, Concrete validation state.
+
+###### Evaluation Contract
+
+**Required tests**
+- Add and pass a dependency-free package test script using Node v24 built-in `node --test`.
+- Tests must cover slug/title/body validation, unsafe stored-HTML policy cases, owner authorization allow/deny behavior, KV metadata listing pagination/filter/sort behavior, and config invariants for Astro/Wrangler/Cloudflare bindings.
+- `concrete validate` must pass after implementation. If Concrete does not run the focused test script, run the repo-local test command only when Concrete policy allows declared repo tools and record that evidence.
+
+**Required real-path checks**
+- Confirm current hardening head descends from `8012af5` and does not revert `src/components/PostEditor.astro` or restore LinkedIn UI.
+- Confirm `src/pages/index.astro` and `src/pages/progress.astro` remain `prerender = true`; blog and admin routes remain SSR where KV/auth require it.
+- Confirm create, update, delete, public list, public detail, draft 404, missing 404, and unauthorized admin scenarios are exercised through route handlers, Concrete preview, or equivalent Concrete-authorized local checks.
+- Confirm no production deployment command was run.
+
+**Required authority invariants**
+- Exactly one slug validation authority.
+- Exactly one stored-HTML policy authority.
+- Exactly one owner authorization authority layered on Clerk.
+- KV remains the only blog post persistence authority; no file-backed, in-memory, or alternate index store.
+- Hidden `body` form field remains the admin editor submission contract.
+
+**Required integration points**
+- `src/middleware.ts` and admin route behavior still use Clerk.
+- Admin API routes continue PRG redirects with 303 on successful mutations.
+- Public blog detail still returns 404 for missing and unpublished posts.
+- `wrangler.toml` keeps `BLOG_POSTS`, `SESSION`, `nodejs_compat`, and non-secret public Clerk config intact.
+- Existing homepage Blog link and progress milestones remain visible.
+
+**Forbidden shortcuts**
+- Do not run `npm run deploy`, direct `wrangler deploy`, or `concrete deploy --environment prod`.
+- Do not bypass Concrete for build, deploy, provider, dependency, or infrastructure operations.
+- Do not add npm dependencies or modify `package-lock.json` without a new planner decision.
+- Do not replace Clerk, disable middleware, or create a parallel auth system.
+- Do not leave duplicated validation regexes or HTML policy checks in route files after adding shared helpers.
+- Do not implement a broad hand-rolled sanitizer that claims to safely accept arbitrary user-generated HTML.
+- Do not silently allow all admin users in production when owner configuration is absent or mismatched.
+- Do not restore LinkedIn UI or remove the rich editor baseline.
+
+**Ready-for-guardian definition**
+- Reviewer has `REVIEW_VERDICT=ready_for_guardian` for the final head.
+- Required tests and Concrete validation pass on that same head.
+- Scope check shows no forbidden touch points.
+- Evaluation evidence explicitly names the head SHA, test commands, Concrete result, and any retained non-goals.
+
+###### Scope Manifest
+
+**Allowed files/directories**
+- `package.json`
+- `astro.config.mjs`
+- `wrangler.toml`
+- `tsconfig.json`
+- `src/components/**`
+- `src/lib/**`
+- `src/middleware.ts`
+- `src/pages/admin/**`
+- `src/pages/blog/**`
+- `src/pages/index.astro`
+- `src/pages/progress.astro`
+- `tests/**`
+- `tmp/**`
+
+**Required files/directories**
+- `package.json`
+- `wrangler.toml`
+- `src/middleware.ts`
+- `src/components/PostEditor.astro`
+- `src/lib/**`
+- `src/pages/admin/api/posts/index.ts`
+- `src/pages/admin/api/posts/[slug].ts`
+- `src/pages/admin/posts/new.astro`
+- `src/pages/admin/posts/[slug]/edit.astro`
+- `src/pages/blog/[slug].astro`
+- `tests/**`
+
+**Forbidden touch points**
+- `.concrete/**`
+- `.claude/**`
+- `.codex/**`
+- `.git/**`
+- `dist/**`
+- `node_modules/**`
+- `public/**`
+- `package-lock.json`
+- Cloudflare production deployment state
+- Any file outside the repository root
+
+**Expected state authorities touched**
+- Blog KV contract (`BLOG_POSTS`, `src/lib/kv-store.ts`)
+- Blog validation authority (new `src/lib/` helper)
+- Stored HTML policy authority (new `src/lib/` helper)
+- Clerk owner authorization authority (`src/middleware.ts` plus helper/config)
+- Admin editor DOM/form authority (`src/components/PostEditor.astro`)
+- Concrete validation/test state
+
+#### Site Hardening Worktree Strategy
+
+Use the bound workflow/worktree from `cc-policy`:
+- **Workflow:** `codex-site-hardening`
+- **Branch:** `codex/rich-post-editor`
+- **Base:** `master`
+- **Worktree:** `/Users/georgehyde/Documents/Concrete/test_repo/georgehyde_dev`
+
+Guardian provision owns any lease/bootstrap transition before source implementation. Implementer must stay inside W-SH-1 scope.
+
+#### Site Hardening References
+
+- Local source audit performed on 2026-07-13.
+- Concrete status: initialized, guard enforced, last validation passed before this planning amendment.
+- No web research required for this plan; use official Clerk/Cloudflare/Astro docs only if implementation changes their integration semantics.
 
 ---
 
