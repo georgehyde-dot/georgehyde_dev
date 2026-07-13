@@ -355,6 +355,10 @@ All P0 requirements satisfied. Site owner can create, edit, delete, and publish/
   Addresses: REQ-P0-106, REQ-P0-107, REQ-GOAL-104.
   Rationale: Minimizes dependencies per project principle #2 (reach for the platform). Single author can write HTML directly. The `body` field stores raw HTML as a string — format-agnostic by design. Upgrade path to markdown requires only adding a parser on the render side; no data model or editor changes needed.
 
+- DEC-EDITOR-004: Platform rich-text editor, zero dependencies
+  Addresses: REQ-P0-106, REQ-P0-107, REQ-GOAL-104.
+  Rationale: Supersedes DEC-EDITOR-003 for the authoring UI while preserving the same storage/API contract. The browser contenteditable surface and formatting toolbar produce HTML in the existing `body` field, avoiding an editor dependency and removing the need to hand-write HTML for routine posts.
+
 - DEC-RENDER-004: SSR for all blog pages (KV requires runtime access)
   Addresses: REQ-P0-103, REQ-P0-104.
   Rationale: Cloudflare KV is only accessible server-side at request time via the Workers runtime. There is no build-time KV access for Astro prerendering. All blog pages (`/blog`, `/blog/[slug]`) and admin pages use `export const prerender = false`.
@@ -435,7 +439,7 @@ All P0 requirements satisfied. Site owner can create, edit, delete, and publish/
 - REQ-P0-109 satisfied: API routes handle POST, PUT, DELETE under /admin/api/posts
 
 ##### Planned Decisions
-- DEC-EDITOR-003: Plain HTML textarea, zero deps — single author can write HTML directly — Addresses: REQ-P0-106, REQ-P0-107
+- DEC-EDITOR-004: Platform rich-text editor, zero deps — author can format posts without hand-writing HTML — Addresses: REQ-P0-106, REQ-P0-107
 - DEC-URL-002: /admin/posts/*, /admin/api/posts/* — auto-protected by Clerk middleware — Addresses: REQ-P0-105, REQ-P0-109
 
 ##### Work Items
@@ -491,7 +495,7 @@ All P0 requirements satisfied. Site owner can create, edit, delete, and publish/
 ##### Decision Log
 - DEC-ADMIN-001: PRG pattern (303 redirect) for all admin form mutations. POST to API route, redirect 303 to /admin/posts. Prevents double-submission on back/refresh. Applied to create, update, and delete flows. Addresses REQ-P0-106, REQ-P0-107, REQ-P0-108.
 - DEC-ADMIN-002: Server-side slug validation with `/^[a-z0-9-]+$/` regex on all API routes. Slug is KV key suffix and URL path segment — strict allowlist prevents path traversal and malformed keys. Addresses REQ-P0-109.
-- DEC-EDITOR-003: Plain HTML textarea editor with live preview, zero dependencies. Body stored as raw HTML string. Vanilla JS for slug auto-generation and innerHTML preview. Addresses REQ-P0-106, REQ-P0-107, REQ-P1-101, REQ-P1-102.
+- DEC-EDITOR-004: Platform rich-text editor with live preview, zero dependencies. Body is still stored as a raw HTML string, but `src/components/PostEditor.astro` gives the admin create/edit pages a contenteditable formatting toolbar and synchronizes the generated HTML into the existing form field. Addresses REQ-P0-106, REQ-P0-107, REQ-P1-101, REQ-P1-102.
 - DEC-URL-002: Admin routes at /admin/posts/*, API routes at /admin/api/posts/*. Auto-protected by existing Clerk middleware `/admin(.*)` pattern. Addresses REQ-P0-105, REQ-P0-109.
 - Implementation note: HTML forms cannot send PUT/DELETE, so update/delete API uses POST with `_method=delete` hidden field (method-override pattern). All P1 nice-to-haves delivered (live preview, slug auto-gen, delete confirmation dialog).
 
@@ -575,7 +579,7 @@ Main is sacred. Each phase works in its own worktree:
 
 **Must-Have (P0)**
 
-- REQ-P0-201: Blog link on homepage in the links section alongside GitHub, LinkedIn, Email
+- REQ-P0-201: Blog link on homepage in the links section alongside GitHub and Email
   Acceptance: Given the homepage loads, When a reader sees the links section, Then a "Blog" link is visible that navigates to /blog
 
 - REQ-P0-202: Clerk Auth milestone added to progress tracker as completed
@@ -589,7 +593,7 @@ Main is sacred. Each phase works in its own worktree:
 
 #### Definition of Done
 
-Homepage shows a Blog link alongside GitHub, LinkedIn, Email that navigates to /blog. Progress page shows 5 completed milestones (was 3) including Clerk Auth and Blog System entries. Progress bar reflects the updated completion percentage. Both pages still prerender. `npm run build` succeeds.
+Homepage shows a Blog link alongside GitHub and Email that navigates to /blog. Progress page shows 5 completed milestones (was 3) including Clerk Auth and Blog System entries. Progress bar reflects the updated completion percentage. Both pages still prerender. `npm run build` succeeds.
 
 #### Architectural Decisions
 

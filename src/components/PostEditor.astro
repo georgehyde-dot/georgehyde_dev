@@ -1,0 +1,345 @@
+---
+/**
+ * src/components/PostEditor.astro — Shared admin rich-text post editor.
+ *
+ * Renders a dependency-free contenteditable editor, keeps the HTML body in a
+ * hidden form field, and shows the same rendered preview the public page uses.
+ *
+ * @decision DEC-EDITOR-004
+ * @title Platform rich-text editor, zero dependencies
+ * @status accepted
+ * @rationale The blog still stores HTML strings, but authors should not have
+ *   to write HTML by hand. Browser editing primitives and a small vanilla JS
+ *   toolbar provide common formatting without adding an npm editor dependency
+ *   or changing the KV data model/API contract.
+ */
+
+interface Props {
+  initialBody?: string;
+}
+
+const { initialBody = "" } = Astro.props;
+---
+
+<div class="editor-grid">
+  <div class="field editor-field">
+    <label for="body-editor">Body</label>
+    <input type="hidden" id="body" name="body" value={initialBody} />
+
+    <div class="editor-shell">
+      <div class="editor-toolbar" aria-label="Post formatting toolbar">
+        <button type="button" data-format-block="p" title="Paragraph" aria-label="Paragraph">P</button>
+        <button type="button" data-format-block="h2" title="Heading" aria-label="Heading">H2</button>
+        <button type="button" data-format-block="h3" title="Subheading" aria-label="Subheading">H3</button>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <button type="button" data-command="bold" title="Bold" aria-label="Bold"><strong>B</strong></button>
+        <button type="button" data-command="italic" title="Italic" aria-label="Italic"><em>I</em></button>
+        <button type="button" data-command="formatBlock" data-value="blockquote" title="Quote" aria-label="Quote">"</button>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <button type="button" data-command="insertUnorderedList" title="Bulleted list" aria-label="Bulleted list">*</button>
+        <button type="button" data-command="insertOrderedList" title="Numbered list" aria-label="Numbered list">1.</button>
+        <button type="button" data-command="createLink" title="Link" aria-label="Link">Link</button>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <button type="button" data-command="removeFormat" title="Clear formatting" aria-label="Clear formatting">X</button>
+      </div>
+
+      <div
+        id="body-editor"
+        class="rich-editor"
+        contenteditable="true"
+        role="textbox"
+        aria-multiline="true"
+        data-placeholder="Write your post..."
+        set:html={initialBody}
+      ></div>
+    </div>
+  </div>
+
+  <div class="preview-panel">
+    <div class="preview-label">Preview</div>
+    <div class="preview-content" id="preview">
+      <span class="preview-empty">Start typing to see a preview...</span>
+    </div>
+  </div>
+</div>
+
+<style>
+  .editor-grid {
+    align-items: start;
+    display: grid;
+    gap: 2rem;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  @media (max-width: 768px) {
+    .editor-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .editor-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .editor-field label {
+    color: #6b6b6b;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+  }
+
+  .editor-shell {
+    background: #111;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    overflow: hidden;
+    transition: border-color 0.15s;
+  }
+
+  .editor-shell:focus-within {
+    border-color: #4ade80;
+  }
+
+  .editor-toolbar {
+    align-items: center;
+    background: #0f0f0f;
+    border-bottom: 1px solid #252525;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    padding: 0.45rem;
+  }
+
+  .editor-toolbar button {
+    align-items: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: #a3a3a3;
+    cursor: pointer;
+    display: inline-flex;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    height: 1.85rem;
+    justify-content: center;
+    min-width: 1.85rem;
+    padding: 0 0.45rem;
+    transition:
+      background 0.15s,
+      border-color 0.15s,
+      color 0.15s;
+  }
+
+  .editor-toolbar button:hover,
+  .editor-toolbar button:focus-visible {
+    background: #1a1a1a;
+    border-color: #333;
+    color: #e5e5e5;
+    outline: none;
+  }
+
+  .toolbar-divider {
+    background: #2a2a2a;
+    height: 1.25rem;
+    margin: 0 0.2rem;
+    width: 1px;
+  }
+
+  .rich-editor {
+    color: #e5e5e5;
+    font-size: 0.95rem;
+    line-height: 1.7;
+    min-height: 360px;
+    outline: none;
+    overflow-wrap: anywhere;
+    padding: 0.85rem 1rem;
+  }
+
+  .rich-editor:empty::before {
+    color: #555;
+    content: attr(data-placeholder);
+    pointer-events: none;
+  }
+
+  .rich-editor :global(h2) {
+    color: #f4f4f5;
+    font-size: 1.3rem;
+    font-weight: 600;
+    margin: 1.2rem 0 0.45rem;
+  }
+
+  .rich-editor :global(h3) {
+    color: #f4f4f5;
+    font-size: 1.08rem;
+    font-weight: 600;
+    margin: 1rem 0 0.35rem;
+  }
+
+  .rich-editor :global(p),
+  .rich-editor :global(ul),
+  .rich-editor :global(ol),
+  .rich-editor :global(blockquote) {
+    margin-bottom: 0.9rem;
+  }
+
+  .rich-editor :global(ul),
+  .rich-editor :global(ol) {
+    padding-left: 1.4rem;
+  }
+
+  .rich-editor :global(blockquote) {
+    border-left: 3px solid #4ade80;
+    color: #cfcfcf;
+    padding-left: 0.9rem;
+  }
+
+  .preview-panel {
+    background: #0f0f0f;
+    border: 1px solid #1f1f1f;
+    border-radius: 8px;
+    min-height: 400px;
+    padding: 1.5rem;
+  }
+
+  .preview-label {
+    color: #444;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.07em;
+    margin-bottom: 1rem;
+    text-transform: uppercase;
+  }
+
+  .preview-content {
+    color: #d4d4d4;
+    font-size: 0.95rem;
+    line-height: 1.75;
+    overflow-wrap: anywhere;
+  }
+
+  .preview-content :global(h2) {
+    color: #f4f4f5;
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 1.5rem 0 0.5rem;
+  }
+
+  .preview-content :global(h3) {
+    color: #f4f4f5;
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 1rem 0 0.4rem;
+  }
+
+  .preview-content :global(p),
+  .preview-content :global(ul),
+  .preview-content :global(ol),
+  .preview-content :global(blockquote) {
+    margin-bottom: 1rem;
+  }
+
+  .preview-content :global(ul),
+  .preview-content :global(ol) {
+    padding-left: 1.4rem;
+  }
+
+  .preview-content :global(blockquote) {
+    border-left: 3px solid #4ade80;
+    color: #cfcfcf;
+    padding-left: 0.9rem;
+  }
+
+  .preview-content :global(a) {
+    color: #4ade80;
+  }
+
+  .preview-content :global(code) {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 3px;
+    font-family: ui-monospace, monospace;
+    font-size: 0.85em;
+    padding: 0.1em 0.35em;
+  }
+
+  .preview-content :global(pre) {
+    background: #141414;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+    overflow-x: auto;
+    padding: 0.9rem 1.1rem;
+  }
+
+  .preview-empty {
+    color: #333;
+    font-size: 0.875rem;
+    font-style: italic;
+  }
+</style>
+
+<script>
+  const editor = document.getElementById('body-editor');
+  const bodyInput = document.getElementById('body');
+  const preview = document.getElementById('preview');
+  const form = editor?.closest('form');
+
+  const emptyPreview = '<span class="preview-empty">Start typing to see a preview...</span>';
+
+  const syncBody = () => {
+    if (!(editor instanceof HTMLElement) || !(bodyInput instanceof HTMLInputElement)) {
+      return;
+    }
+
+    const html = editor.innerHTML.trim();
+    bodyInput.value = html;
+    if (preview) {
+      preview.innerHTML = html || emptyPreview;
+    }
+  };
+
+  const focusEditor = () => {
+    if (editor instanceof HTMLElement) {
+      editor.focus();
+    }
+  };
+
+  document.querySelectorAll('[data-command], [data-format-block]').forEach((button) => {
+    button.addEventListener('mousedown', (event) => {
+      event.preventDefault();
+    });
+
+    button.addEventListener('click', () => {
+      if (!(button instanceof HTMLButtonElement)) {
+        return;
+      }
+
+      focusEditor();
+
+      const formatBlock = button.dataset.formatBlock;
+      const command = button.dataset.command;
+
+      if (formatBlock) {
+        document.execCommand('formatBlock', false, formatBlock);
+      } else if (command === 'createLink') {
+        const href = window.prompt('URL');
+        if (href) {
+          document.execCommand('createLink', false, href);
+        }
+      } else if (command) {
+        document.execCommand(command, false, button.dataset.value ?? '');
+      }
+
+      syncBody();
+    });
+  });
+
+  editor?.addEventListener('input', syncBody);
+  editor?.addEventListener('blur', syncBody);
+  form?.addEventListener('submit', syncBody);
+  syncBody();
+</script>
