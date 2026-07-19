@@ -10,13 +10,26 @@
  *   No client-side Clerk components are imported; the sign-out link uses Clerk's
  *   hosted sign-out URL to keep the page dependency-free.
  *   Dark theme matches index.astro (bg #0a0a0a, text #e5e5e5).
+ *
+ * @decision DEC-SH-003
+ * @title Admin UI consumes the shared server-side auth mode
+ * @status accepted
+ * @rationale Local mode intentionally has no Clerk identity, so the page must
+ *   not call Astro.locals.auth() there. Production retains its identity,
+ *   session, and hosted sign-out behavior behind the shared mode authority.
  */
+
+import type { Runtime } from "@astrojs/cloudflare";
+import { resolveAdminAuthMode } from "../../lib/admin-auth.ts";
+import type { Env } from "../../lib/kv-store.ts";
 
 export const prerender = false;
 
-// auth() is set by clerkMiddleware — middleware already enforced sign-in,
-// so userId is non-null here.
-const { userId, sessionId } = Astro.locals.auth();
+const runtime = (Astro.locals as Runtime<Env>).runtime;
+const isLocal = resolveAdminAuthMode(runtime?.env) === "local";
+const auth = isLocal ? null : Astro.locals.auth();
+const userId = auth?.userId;
+const sessionId = auth?.sessionId;
 ---
 
 <html lang="en">
@@ -122,22 +135,32 @@ const { userId, sessionId } = Astro.locals.auth();
     <div class="card">
       <h1>Admin</h1>
 
-      <div class="field">
-        <div class="label">User ID</div>
-        <div class="value">{userId}</div>
-      </div>
+      {isLocal ? (
+        <div class="field">
+          <div class="label">Mode</div>
+          <div class="value">Local development mode</div>
+          <div class="value">Clerk identity is not required.</div>
+        </div>
+      ) : (
+        <>
+          <div class="field">
+            <div class="label">User ID</div>
+            <div class="value">{userId}</div>
+          </div>
 
-      <div class="field">
-        <div class="label">Session ID</div>
-        <div class="value">{sessionId}</div>
-      </div>
+          <div class="field">
+            <div class="label">Session ID</div>
+            <div class="value">{sessionId}</div>
+          </div>
+        </>
+      )}
 
       <hr class="divider" />
 
       <div class="actions">
         <a href="/admin/posts" class="btn btn-primary">Manage posts</a>
         <a href="/" class="btn btn-ghost">Home</a>
-        <a href="/sign-out" class="btn btn-ghost">Sign out</a>
+        {!isLocal && <a href="/sign-out" class="btn btn-ghost">Sign out</a>}
       </div>
     </div>
   </body>

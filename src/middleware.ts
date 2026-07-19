@@ -17,35 +17,70 @@
  * @rationale Clerk proves the request is authenticated; src/lib/admin-auth.ts
  *   proves the authenticated user is the configured site owner. Keeping both
  *   checks here makes every /admin/* page owner-gated without scattering
- *   route-specific authorization logic.
+ *   route-specific authorization logic. The shared environment resolver runs
+ *   before Clerk so exact local mode can support credential-free workflows;
+ *   every other environment retains the production Clerk and owner sequence.
  */
 
-import { clerkMiddleware, createRouteMatcher } from '@clerk/astro/server';
+import {
+  clerkMiddleware,
+  createRouteMatcher,
+  type AuthFn,
+} from '@clerk/astro/server';
 import type { Runtime } from "@astrojs/cloudflare";
+import type { APIContext } from "astro";
 import {
   adminAuthorizationResponse,
   authorizeAdminOwner,
+  resolveAdminAuthMode,
 } from "./lib/admin-auth.ts";
 import type { Env } from "./lib/kv-store.ts";
 
 const isProtectedRoute = createRouteMatcher(['/admin(.*)']);
 
-export const onRequest = clerkMiddleware((auth, context, next) => {
-  if (!isProtectedRoute(context.request)) {
+type MiddlewareNext = () => Promise<Response>;
+type MiddlewareHandler = (
+  context: APIContext,
+  next: MiddlewareNext
+) => Response | Promise<Response> | void | Promise<void>;
+type ClerkHandler = (
+  auth: AuthFn,
+  context: APIContext,
+  next: MiddlewareNext
+) => Response | Promise<Response> | undefined;
+type ClerkMiddlewareFactory = (handler: ClerkHandler) => MiddlewareHandler;
+
+export function createAdminMiddleware(
+  wrapWithClerk: ClerkMiddlewareFactory = clerkMiddleware
+): MiddlewareHandler {
+  const productionMiddleware = wrapWithClerk((auth, context, next) => {
+    if (!isProtectedRoute(context.request)) {
+      return next();
+    }
+
+    const authObject = auth();
+
+    if (!authObject.userId) {
+      return authObject.redirectToSignIn();
+    }
+
+    const runtime = (context.locals as Runtime<Env>).runtime;
+    const owner = authorizeAdminOwner(authObject.userId, runtime?.env);
+    if (!owner.ok) {
+      return adminAuthorizationResponse(owner);
+    }
+
     return next();
-  }
+  });
 
-  const authObject = auth();
+  return (context, next) => {
+    const runtime = (context.locals as Runtime<Env>).runtime;
+    if (resolveAdminAuthMode(runtime?.env) === "local") {
+      return next();
+    }
 
-  if (!authObject.userId) {
-    return authObject.redirectToSignIn();
-  }
+    return productionMiddleware(context, next);
+  };
+}
 
-  const runtime = (context.locals as Runtime<Env>).runtime;
-  const owner = authorizeAdminOwner(authObject.userId, runtime?.env);
-  if (!owner.ok) {
-    return adminAuthorizationResponse(owner);
-  }
-
-  return next();
-});
+export const onRequest = createAdminMiddleware();

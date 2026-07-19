@@ -3,15 +3,14 @@ main = "dist/_worker.js/index.js"
 compatibility_date = "2025-03-25"
 compatibility_flags = ["nodejs_compat"]
 
-[assets]
-directory = "./dist"
-
-
 # Custom domain routing
 routes = [
     { pattern = "georgehyde.dev/*", zone_name = "georgehyde.dev" },
     { pattern = "georgehyde.dev", custom_domain = true },
 ]
+
+[assets]
+directory = "./dist"
 
 # Environment variables
 [vars]

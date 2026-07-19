@@ -1,3 +1,11 @@
+/**
+ * @decision DEC-SH-004
+ * @title Dependency-free hardening integration coverage
+ * @status accepted
+ * @rationale Node's built-in runner exercises the real validation, auth, API,
+ *   KV, middleware, and configuration sequence without another dependency.
+ */
+
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
@@ -7,7 +15,10 @@ import {
   validateRouteSlug,
   validateUpdatePostForm,
 } from "../src/lib/blog-validation.ts";
-import { authorizeAdminOwner } from "../src/lib/admin-auth.ts";
+import {
+  authorizeAdminOwner,
+  resolveAdminAuthMode,
+} from "../src/lib/admin-auth.ts";
 import { validateStoredHtml } from "../src/lib/html-policy.ts";
 import {
   deleteBlogPost,
@@ -16,6 +27,7 @@ import {
   listPublishedPosts,
 } from "../src/lib/kv-store.ts";
 import { getPublishedBlogPost } from "../src/lib/public-blog.ts";
+import { createAdminMiddleware } from "../src/middleware.ts";
 import { POST as createPost } from "../src/pages/admin/api/posts/index.ts";
 import { POST as mutatePost } from "../src/pages/admin/api/posts/[slug].ts";
 
@@ -98,6 +110,13 @@ function apiContext({ env, userId = "user_owner", request, slug } = {}) {
         headers: { Location: location },
       });
     },
+  };
+}
+
+function middlewareContext(env, path = "/admin/posts") {
+  return {
+    request: new Request(`https://georgehyde.dev${path}`),
+    locals: { runtime: { env } },
   };
 }
 
@@ -188,7 +207,27 @@ test("stored HTML policy rejects parser-equivalent tag and attribute forms", () 
   assertRejectedStoredHtml("<a xlink:href=javascript:alert(1)>x</a>", "Body contains an unsafe URL scheme");
 });
 
-test("owner authorization denies production fallback and non-owner users", () => {
+test("admin auth mode accepts only exact LOCAL_AUTH_BYPASS true", () => {
+  assert.equal(resolveAdminAuthMode({ LOCAL_AUTH_BYPASS: "true" }), "local");
+
+  for (const selector of [undefined, "", " ", "false", "TRUE", "True", " true", "true ", 1, true]) {
+    assert.equal(resolveAdminAuthMode({ LOCAL_AUTH_BYPASS: selector }), "production");
+  }
+  assert.equal(resolveAdminAuthMode({ ENVIRONMENT: "local" }), "production");
+  assert.equal(resolveAdminAuthMode(undefined), "production");
+});
+
+test("owner authorization bypasses only local mode and fails closed otherwise", () => {
+  assert.deepEqual(authorizeAdminOwner(null, createEnv({ LOCAL_AUTH_BYPASS: "true" })), {
+    ok: true,
+    reason: "local_bypass",
+  });
+  assert.deepEqual(authorizeAdminOwner(null, createEnv({ ENVIRONMENT: "local" })), {
+    ok: false,
+    status: 401,
+    reason: "unauthenticated",
+    message: "Unauthorized",
+  });
   assert.deepEqual(authorizeAdminOwner("user_owner", createEnv()), {
     ok: true,
     reason: "owner",
@@ -212,12 +251,137 @@ test("owner authorization denies production fallback and non-owner users", () =>
     message: "Admin owner is not configured",
   });
   assert.deepEqual(
-    authorizeAdminOwner("user_any", createEnv({ ADMIN_OWNER_USER_ID: "", ENVIRONMENT: "local" })),
+    authorizeAdminOwner("user_any", createEnv({ ADMIN_OWNER_USER_ID: "", ENVIRONMENT: "unknown" })),
     {
-      ok: true,
-      reason: "local_clerk_fallback",
+      ok: false,
+      status: 403,
+      reason: "owner_not_configured",
+      message: "Admin owner is not configured",
     }
   );
+});
+
+test("middleware bypasses Clerk only locally and preserves production owner enforcement", async () => {
+  let clerkCalls = 0;
+  let authCalls = 0;
+  let nextCalls = 0;
+  let currentUserId = null;
+
+  const middleware = createAdminMiddleware((handler) => async (context, next) => {
+    clerkCalls += 1;
+    return handler(
+      () => {
+        authCalls += 1;
+        return {
+          userId: currentUserId,
+          redirectToSignIn: () => new Response(null, {
+            status: 302,
+            headers: { Location: "/sign-in" },
+          }),
+        };
+      },
+      context,
+      next
+    );
+  });
+  const next = async () => {
+    nextCalls += 1;
+    return new Response("next", { status: 200 });
+  };
+
+  const local = await middleware(middlewareContext(createEnv({ LOCAL_AUTH_BYPASS: "true" })), next);
+  assert.equal(local.status, 200);
+  assert.equal(clerkCalls, 0);
+  assert.equal(authCalls, 0);
+
+  const signedOut = await middleware(middlewareContext(createEnv()), next);
+  assert.equal(signedOut.status, 302);
+  assert.equal(signedOut.headers.get("Location"), "/sign-in");
+
+  currentUserId = "user_other";
+  const nonOwner = await middleware(middlewareContext(createEnv()), next);
+  assert.equal(nonOwner.status, 403);
+
+  currentUserId = "user_owner";
+  const owner = await middleware(middlewareContext(createEnv()), next);
+  assert.equal(owner.status, 200);
+
+  const unknownEnvironment = await middleware(
+    middlewareContext(createEnv({ ENVIRONMENT: "unknown", ADMIN_OWNER_USER_ID: "" })),
+    next
+  );
+  assert.equal(unknownEnvironment.status, 403);
+  assert.equal(clerkCalls, 4);
+  assert.equal(authCalls, 4);
+  assert.equal(nextCalls, 2);
+});
+
+test("local no-identity admin API sequence preserves validation, KV writes, PRG, and deletion", async () => {
+  const env = createEnv({
+    ENVIRONMENT: "local",
+    LOCAL_AUTH_BYPASS: "true",
+    ADMIN_OWNER_USER_ID: "",
+  });
+
+  const unsafe = await createPost(apiContext({
+    env,
+    userId: null,
+    request: formRequest([
+      ["title", "Unsafe"],
+      ["slug", "unsafe"],
+      ["body", "<script>alert(1)</script>"],
+    ]),
+  }));
+  assert.equal(unsafe.status, 400);
+  assert.equal(await getBlogPost(env, "unsafe"), null);
+
+  const created = await createPost(apiContext({
+    env,
+    userId: null,
+    request: formRequest([
+      ["title", "Local post"],
+      ["slug", "local-post"],
+      ["body", "<p>Created locally</p>"],
+      ["published", "on"],
+    ]),
+  }));
+  assert.equal(created.status, 303);
+  assert.equal(created.headers.get("Location"), "/admin/posts");
+  assert.equal((await getBlogPost(env, "local-post")).body, "<p>Created locally</p>");
+
+  const updated = await mutatePost(apiContext({
+    env,
+    userId: null,
+    slug: "local-post",
+    request: formRequest([
+      ["title", "Updated locally"],
+      ["body", "<p>Updated locally</p>"],
+    ]),
+  }));
+  assert.equal(updated.status, 303);
+  assert.equal((await getBlogPost(env, "local-post")).body, "<p>Updated locally</p>");
+
+  const deleted = await mutatePost(apiContext({
+    env,
+    userId: null,
+    slug: "local-post",
+    request: formRequest([["_method", "delete"]]),
+  }));
+  assert.equal(deleted.status, 303);
+  assert.equal(await getBlogPost(env, "local-post"), null);
+
+  const productionEnv = createEnv();
+  const denied = await createPost(apiContext({
+    env: productionEnv,
+    userId: null,
+    request: formRequest([
+      ["title", "Denied"],
+      ["slug", "denied"],
+      ["body", "<p>Denied</p>"],
+    ]),
+  }));
+  assert.equal(denied.status, 401);
+  assert.equal(await getBlogPost(productionEnv, "denied"), null);
 });
 
 test("KV listing paginates, filters drafts, and sorts newest first", async () => {
@@ -320,13 +484,14 @@ test("admin write handlers and public read helper exercise the production blog s
 });
 
 test("config and source invariants stay aligned with the hardening contract", async () => {
-  const [packageJson, wrangler, astroConfig, home, progress, detail, editor, newPost, createRoute, updateRoute] =
+  const [packageJson, wrangler, astroConfig, home, progress, adminHome, detail, editor, newPost, createRoute, updateRoute] =
     await Promise.all([
       readFile(projectFile("package.json"), "utf8"),
       readFile(projectFile("wrangler.toml"), "utf8"),
       readFile(projectFile("astro.config.mjs"), "utf8"),
       readFile(projectFile("src/pages/index.astro"), "utf8"),
       readFile(projectFile("src/pages/progress.astro"), "utf8"),
+      readFile(projectFile("src/pages/admin/index.astro"), "utf8"),
       readFile(projectFile("src/pages/blog/[slug].astro"), "utf8"),
       readFile(projectFile("src/components/PostEditor.astro"), "utf8"),
       readFile(projectFile("src/pages/admin/posts/new.astro"), "utf8"),
@@ -341,6 +506,17 @@ test("config and source invariants stay aligned with the hardening contract", as
   assert.match(wrangler, /compatibility_flags = \["nodejs_compat"\]/);
   assert.match(wrangler, /PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_/);
   assert.match(wrangler, /ADMIN_OWNER_USER_ID = /);
+
+  const firstTableIndex = wrangler.search(/^\[/m);
+  const routesIndex = wrangler.search(/^routes\s*=/m);
+  const assetsStart = wrangler.search(/^\[assets\]\s*$/m);
+  const nextTableOffset = wrangler.slice(assetsStart + 1).search(/^\[/m);
+  const assetsEnd = nextTableOffset === -1 ? wrangler.length : assetsStart + 1 + nextTableOffset;
+  const assetsSection = wrangler.slice(assetsStart, assetsEnd);
+
+  assert.ok(routesIndex >= 0, "wrangler routes must be configured");
+  assert.ok(routesIndex < firstTableIndex, "wrangler routes must be top-level before the first table");
+  assert.doesNotMatch(assetsSection, /^routes\s*=/m);
   assert.match(astroConfig, /adapter: cloudflare\(\)/);
 
   assert.match(home, /export const prerender = true/);
@@ -352,7 +528,11 @@ test("config and source invariants stay aligned with the hardening contract", as
   assert.doesNotMatch(detail, /set:html=\{post\.body\}/);
   assert.match(detail, /safeBody/);
   assert.match(editor, /type="hidden" id="body" name="body"/);
+  assert.match(adminHome, /resolveAdminAuthMode/);
+  assert.match(adminHome, /Local development mode/);
+  assert.match(adminHome, /!isLocal.*href="\/sign-out"/s);
   assert.match(createRoute, /validateCreatePostForm/);
   assert.match(updateRoute, /validateUpdatePostForm/);
+  assert.doesNotMatch(createRoute + updateRoute, /ENVIRONMENT|resolveAdminAuthMode|["']local["']/);
   assert.doesNotMatch(newPost + createRoute + updateRoute, /SLUG_RE|\/\^\[a-z0-9-|\[a-z0-9-\]\+/);
 });

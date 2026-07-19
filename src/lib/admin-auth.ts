@@ -10,18 +10,19 @@
  * @status accepted
  * @rationale The blog admin is a single-owner surface, not a generic
  *   authenticated-user area. Centralizing the owner check prevents individual
- *   pages or API routes from silently allowing every signed-in Clerk user.
- *   Production denies access when the owner ID is absent; local/non-production
- *   keeps the retained Clerk-only behavior for development.
+ *   pages or API routes from silently allowing every signed-in Clerk user. An
+ *   exact server-only LOCAL_AUTH_BYPASS="true" value bypasses authentication
+ *   for local workflows; every other value keeps production auth fail-closed.
  */
 
 export interface AdminOwnerEnv {
   ADMIN_OWNER_USER_ID?: string;
   ENVIRONMENT?: string;
+  LOCAL_AUTH_BYPASS?: string;
 }
 
 export type AdminAuthorizationResult =
-  | { ok: true; reason: "owner" | "local_clerk_fallback" }
+  | { ok: true; reason: "owner" | "local_bypass" }
   | {
       ok: false;
       status: 401 | 403;
@@ -29,10 +30,22 @@ export type AdminAuthorizationResult =
       message: string;
     };
 
+export type AdminAuthMode = "local" | "production";
+
+export function resolveAdminAuthMode(
+  env: AdminOwnerEnv | null | undefined
+): AdminAuthMode {
+  return env?.LOCAL_AUTH_BYPASS === "true" ? "local" : "production";
+}
+
 export function authorizeAdminOwner(
   userId: string | null | undefined,
   env: AdminOwnerEnv | null | undefined
 ): AdminAuthorizationResult {
+  if (resolveAdminAuthMode(env) === "local") {
+    return { ok: true, reason: "local_bypass" };
+  }
+
   if (!userId) {
     return {
       ok: false,
@@ -44,16 +57,12 @@ export function authorizeAdminOwner(
 
   const ownerId = env?.ADMIN_OWNER_USER_ID?.trim() ?? "";
   if (!ownerId) {
-    if (isProduction(env)) {
-      return {
-        ok: false,
-        status: 403,
-        reason: "owner_not_configured",
-        message: "Admin owner is not configured",
-      };
-    }
-
-    return { ok: true, reason: "local_clerk_fallback" };
+    return {
+      ok: false,
+      status: 403,
+      reason: "owner_not_configured",
+      message: "Admin owner is not configured",
+    };
   }
 
   if (userId !== ownerId) {
@@ -72,8 +81,4 @@ export function adminAuthorizationResponse(
   result: Exclude<AdminAuthorizationResult, { ok: true }>
 ): Response {
   return new Response(result.message, { status: result.status });
-}
-
-function isProduction(env: AdminOwnerEnv | null | undefined): boolean {
-  return (env?.ENVIRONMENT ?? "production").toLowerCase() === "production";
 }
