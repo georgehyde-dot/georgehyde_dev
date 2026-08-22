@@ -12,6 +12,24 @@
  *   to write HTML by hand. Browser editing primitives and a small vanilla JS
  *   toolbar provide common formatting without adding an npm editor dependency
  *   or changing the KV data model/API contract.
+ *
+ * @decision DEC-BE-005
+ * @title Latest editor snapshot controls save-state truth
+ * @status accepted
+ * @rationale One controller serializes autosave and explicit draft saves so
+ *   stale responses cannot clear newer dirty content or create a second client
+ *   persistence authority.
+ *
+ * Future form contract (W-BE-1D/1E):
+ * - The closest form supplies inputs named title, slug, and body plus its
+ *   canonical create/update action.
+ * - Optional presentation controls use data-post-save-status,
+ *   data-post-save-retry, and data-post-save-draft.
+ * - A Save draft control dispatches one bubbling post-editor:save-draft event
+ *   on the form; this controller is the event's only save handler.
+ * - Autosave sends _autosave=1 and Accept: application/json. A successful
+ *   create response locks the slug input and changes later requests to the
+ *   canonical /admin/api/posts/{slug} update action.
  */
 
 interface Props {
@@ -28,18 +46,22 @@ const { initialBody = "" } = Astro.props;
 
     <div class="editor-shell">
       <div class="editor-toolbar" aria-label="Post formatting toolbar">
-        <button type="button" data-format-block="p" title="Paragraph" aria-label="Paragraph">P</button>
-        <button type="button" data-format-block="h2" title="Heading" aria-label="Heading">H2</button>
-        <button type="button" data-format-block="h3" title="Subheading" aria-label="Subheading">H3</button>
+        <button type="button" data-block="p" title="Paragraph" aria-label="Paragraph" aria-pressed="false">P</button>
+        <button type="button" data-block="h2" title="Heading 2" aria-label="Heading 2" aria-pressed="false">H2</button>
+        <button type="button" data-block="h3" title="Heading 3" aria-label="Heading 3" aria-pressed="false">H3</button>
         <span class="toolbar-divider" aria-hidden="true"></span>
-        <button type="button" data-command="bold" title="Bold" aria-label="Bold" aria-keyshortcuts="Control+B"><strong>B</strong></button>
-        <button type="button" data-command="italic" title="Italic" aria-label="Italic" aria-keyshortcuts="Control+I"><em>I</em></button>
-        <button type="button" data-command="formatBlock" data-value="blockquote" title="Quote" aria-label="Quote">"</button>
+        <button type="button" data-command="bold" title="Bold" aria-label="Bold" aria-pressed="false" aria-keyshortcuts="Control+B"><strong>B</strong></button>
+        <button type="button" data-command="italic" title="Italic" aria-label="Italic" aria-pressed="false" aria-keyshortcuts="Control+I"><em>I</em></button>
+        <button type="button" data-inline-code title="Inline code" aria-label="Inline code" aria-pressed="false">&lt;/&gt;</button>
+        <button type="button" data-block="pre" title="Code block" aria-label="Code block" aria-pressed="false">Code</button>
+        <button type="button" data-block="blockquote" title="Blockquote" aria-label="Blockquote" aria-pressed="false">"</button>
         <span class="toolbar-divider" aria-hidden="true"></span>
-        <button type="button" data-command="insertUnorderedList" title="Bulleted list" aria-label="Bulleted list">*</button>
-        <button type="button" data-command="insertOrderedList" title="Numbered list" aria-label="Numbered list">1.</button>
-        <button type="button" data-command="createLink" title="Link" aria-label="Link">Link</button>
+        <button type="button" data-command="insertUnorderedList" title="Bulleted list" aria-label="Bulleted list" aria-pressed="false">*</button>
+        <button type="button" data-command="insertOrderedList" title="Numbered list" aria-label="Numbered list" aria-pressed="false">1.</button>
+        <button type="button" data-link title="Insert link" aria-label="Insert link">Link</button>
         <span class="toolbar-divider" aria-hidden="true"></span>
+        <button type="button" data-command="undo" title="Undo" aria-label="Undo" disabled>Undo</button>
+        <button type="button" data-command="redo" title="Redo" aria-label="Redo" disabled>Redo</button>
         <button type="button" data-command="removeFormat" title="Clear formatting" aria-label="Clear formatting">X</button>
       </div>
 
@@ -48,6 +70,7 @@ const { initialBody = "" } = Astro.props;
         class="rich-editor"
         contenteditable="true"
         role="textbox"
+        aria-label="Post body"
         aria-multiline="true"
         data-placeholder="Write your post..."
         set:html={initialBody}
@@ -142,6 +165,17 @@ const { initialBody = "" } = Astro.props;
     outline: none;
   }
 
+  .editor-toolbar button[aria-pressed="true"] {
+    background: #16351f;
+    border-color: #4ade80;
+    color: #dcfce7;
+  }
+
+  .editor-toolbar button:disabled {
+    cursor: not-allowed;
+    opacity: 0.35;
+  }
+
   .toolbar-divider {
     background: #2a2a2a;
     height: 1.25rem;
@@ -184,6 +218,23 @@ const { initialBody = "" } = Astro.props;
   .rich-editor :global(ol),
   .rich-editor :global(blockquote) {
     margin-bottom: 0.9rem;
+  }
+
+  .rich-editor :global(code) {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 3px;
+    font-family: ui-monospace, monospace;
+    padding: 0.1em 0.35em;
+  }
+
+  .rich-editor :global(pre) {
+    background: #141414;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    overflow-x: auto;
+    padding: 0.9rem 1.1rem;
+    white-space: pre-wrap;
   }
 
   .rich-editor :global(ul),
@@ -284,12 +335,113 @@ const { initialBody = "" } = Astro.props;
 
 <script>
   const editor = document.getElementById('body-editor');
-  const bodyInput = document.getElementById('body');
+  const bodyInput = document.querySelector('input[name="body"]');
   const preview = document.getElementById('preview');
   const form = editor?.closest('form');
 
+  const AUTOSAVE_DELAY_MS = 750;
   const emptyPreview = '<span class="preview-empty">Start typing to see a preview...</span>';
   const allowedLinkProtocols = new Set(['http:', 'https:', 'mailto:']);
+
+  /* SAVE_CONTROLLER_START */
+  function createSaveController(options) {
+    const state = {
+      canonicalSlug: options.initialSlug || null,
+      dirty: false,
+      status: 'saved',
+    };
+    let action = options.initialAction;
+    let changeVersion = 0;
+    let timer = null;
+    let inFlight = false;
+    let followUp = false;
+
+    const publish = (status, extra = {}) => {
+      Object.assign(state, { status, ...extra });
+      options.onState({ ...state });
+    };
+
+    const clearPendingTimer = () => {
+      if (timer !== null) {
+        options.clearTimer(timer);
+        timer = null;
+      }
+    };
+
+    const run = () => {
+      clearPendingTimer();
+      if (inFlight) {
+        followUp = true;
+        return;
+      }
+
+      const snapshot = options.getSnapshot();
+      if (!snapshot) {
+        publish('unsaved', { dirty: true });
+        return;
+      }
+
+      const requestVersion = changeVersion;
+      inFlight = true;
+      followUp = false;
+      publish('saving', { dirty: true });
+
+      Promise.resolve(options.request({ action, snapshot }))
+        .then((result) => {
+          if (!result || result.ok !== true) {
+            throw new Error(result?.error?.message || 'Draft could not be saved');
+          }
+
+          const responseSlug = result.post?.slug;
+          if (!state.canonicalSlug && responseSlug) {
+            state.canonicalSlug = responseSlug;
+            action = `/admin/api/posts/${encodeURIComponent(responseSlug)}`;
+            options.onCanonicalSlug?.(responseSlug, action);
+          }
+
+          inFlight = false;
+          if (followUp || changeVersion !== requestVersion) {
+            publish('unsaved', { dirty: true });
+            run();
+          } else {
+            publish('saved', { dirty: false });
+          }
+        })
+        .catch((error) => {
+          inFlight = false;
+          followUp = false;
+          publish('error', {
+            dirty: true,
+            message: error instanceof Error ? error.message : 'Draft could not be saved',
+          });
+        });
+    };
+
+    return {
+      changed() {
+        changeVersion += 1;
+        publish('unsaved', { dirty: true, message: '' });
+        clearPendingTimer();
+        if (inFlight) {
+          followUp = true;
+        } else {
+          timer = options.setTimer(run, options.delay);
+        }
+      },
+      getState() {
+        return { ...state };
+      },
+      retry() {
+        run();
+      },
+      saveNow() {
+        changeVersion += 1;
+        publish('unsaved', { dirty: true, message: '' });
+        run();
+      },
+    };
+  }
+  /* SAVE_CONTROLLER_END */
 
   const escapeHtml = (value) => value
     .replace(/&/g, '&amp;')
@@ -339,13 +491,213 @@ const { initialBody = "" } = Astro.props;
     }
   };
 
+  const getFormControl = (name) => form?.querySelector(`[name="${name}"]`);
+  const statusControl = form?.querySelector('[data-post-save-status]');
+  const retryControl = form?.querySelector('[data-post-save-retry]');
+  const saveDraftControl = form?.querySelector('[data-post-save-draft]');
+
+  const snapshotForm = () => {
+    syncBody();
+    const title = getFormControl('title');
+    const slug = getFormControl('slug');
+    if (!(title instanceof HTMLInputElement) ||
+        !(slug instanceof HTMLInputElement) ||
+        !(bodyInput instanceof HTMLInputElement) ||
+        !title.value.trim() ||
+        !slug.value.trim() ||
+        !bodyInput.value.trim()) {
+      return null;
+    }
+    return { title: title.value, slug: slug.value, body: bodyInput.value };
+  };
+
+  const requestSave = async ({ action, snapshot }) => {
+    const data = new FormData();
+    data.set('title', snapshot.title);
+    data.set('slug', snapshot.slug);
+    data.set('body', snapshot.body);
+    data.set('_autosave', '1');
+    const response = await fetch(action, {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      body: data,
+    });
+    const result = await response.json().catch(() => ({
+      ok: false,
+      error: { message: `Draft save failed (${response.status})` },
+    }));
+    if (!response.ok || result.ok !== true) {
+      throw new Error(result.error?.message || `Draft save failed (${response.status})`);
+    }
+    return result;
+  };
+
+  const renderSaveState = (state) => {
+    if (statusControl instanceof HTMLElement) {
+      const labels = {
+        unsaved: 'Unsaved changes',
+        saving: 'Saving…',
+        saved: 'Saved',
+        error: state.message || 'Draft could not be saved',
+      };
+      statusControl.textContent = labels[state.status] || 'Unsaved changes';
+      statusControl.dataset.state = state.status;
+      statusControl.setAttribute('role', state.status === 'error' ? 'alert' : 'status');
+    }
+    if (retryControl instanceof HTMLButtonElement) {
+      retryControl.hidden = state.status !== 'error';
+    }
+  };
+
+  const initialAction = form?.getAttribute('action') || '/admin/api/posts';
+  const saveController = createSaveController({
+    delay: AUTOSAVE_DELAY_MS,
+    getSnapshot: snapshotForm,
+    request: requestSave,
+    setTimer: window.setTimeout.bind(window),
+    clearTimer: window.clearTimeout.bind(window),
+    onState: renderSaveState,
+    initialAction,
+    onCanonicalSlug: (slug, action) => {
+      const slugControl = getFormControl('slug');
+      if (slugControl instanceof HTMLInputElement) {
+        slugControl.value = slug;
+        slugControl.readOnly = true;
+        slugControl.setAttribute('aria-readonly', 'true');
+      }
+      form?.setAttribute('data-draft-action', action);
+    },
+  });
+
   const focusEditor = () => {
     if (editor instanceof HTMLElement) {
       editor.focus();
     }
   };
 
-  document.querySelectorAll('[data-command], [data-format-block]').forEach((button) => {
+  const updateToolbarState = () => {
+    if (!(editor instanceof HTMLElement)) {
+      return;
+    }
+    const selection = document.getSelection();
+    const anchor = selection?.anchorNode;
+    if (!anchor || !editor.contains(anchor)) {
+      return;
+    }
+
+    document.querySelectorAll('[data-command][aria-pressed]').forEach((button) => {
+      if (button instanceof HTMLButtonElement && button.dataset.command) {
+        button.setAttribute('aria-pressed', String(document.queryCommandState(button.dataset.command)));
+      }
+    });
+    document.querySelectorAll('[data-block]').forEach((button) => {
+      if (button instanceof HTMLButtonElement) {
+        const element = anchor instanceof Element ? anchor : anchor.parentElement;
+        button.setAttribute('aria-pressed', String(element?.closest(button.dataset.block) !== null));
+      }
+    });
+    const inlineCode = document.querySelector('[data-inline-code]');
+    if (inlineCode instanceof HTMLButtonElement) {
+      const element = anchor instanceof Element ? anchor : anchor.parentElement;
+      inlineCode.setAttribute('aria-pressed', String(element?.closest('code') !== null));
+    }
+    for (const command of ['undo', 'redo']) {
+      const button = document.querySelector(`[data-command="${command}"]`);
+      if (button instanceof HTMLButtonElement) {
+        button.disabled = !document.queryCommandEnabled(command);
+      }
+    }
+  };
+
+  const toggleInlineCode = () => {
+    const selection = document.getSelection();
+    if (!selection?.rangeCount || !(editor instanceof HTMLElement)) {
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    const anchor = selection.anchorNode;
+    const activeCode = (anchor instanceof Element ? anchor : anchor?.parentElement)?.closest('code');
+
+    if (activeCode instanceof HTMLElement && editor.contains(activeCode)) {
+      if (selection.isCollapsed) {
+        range.setStartAfter(activeCode);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return;
+      }
+
+      activeCode.replaceWith(...activeCode.childNodes);
+      return;
+    }
+
+    if (selection.isCollapsed) {
+      return;
+    }
+
+    const contents = range.extractContents();
+    contents.querySelectorAll('code').forEach((nestedCode) => {
+      nestedCode.replaceWith(...nestedCode.childNodes);
+    });
+    const code = document.createElement('code');
+    code.append(contents);
+    range.insertNode(code);
+    selection.removeAllRanges();
+    selection.selectAllChildren(code);
+  };
+
+  const selectedStandaloneBlock = (tagName) => {
+    if (!(editor instanceof HTMLElement)) {
+      return null;
+    }
+    const anchor = document.getSelection()?.anchorNode;
+    let block = (anchor instanceof Element ? anchor : anchor?.parentElement)?.closest(tagName);
+    if (!(block instanceof HTMLElement) || !editor.contains(block)) {
+      return null;
+    }
+    while (block.parentElement?.closest(tagName) instanceof HTMLElement) {
+      block = block.parentElement.closest(tagName);
+    }
+    return block;
+  };
+
+  const paragraphAfter = (block) => {
+    if (block.nextElementSibling instanceof HTMLParagraphElement) {
+      return block.nextElementSibling;
+    }
+    const paragraph = document.createElement('p');
+    paragraph.append(document.createElement('br'));
+    block.after(paragraph);
+    return paragraph;
+  };
+
+  const placeCaretAtStart = (element) => {
+    const selection = document.getSelection();
+    if (!selection) {
+      return;
+    }
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  };
+
+  const toggleStandaloneBlock = (tagName) => {
+    const activeBlock = selectedStandaloneBlock(tagName);
+    if (activeBlock) {
+      placeCaretAtStart(paragraphAfter(activeBlock));
+      return;
+    }
+
+    document.execCommand('formatBlock', false, tagName);
+    const createdBlock = selectedStandaloneBlock(tagName);
+    if (createdBlock) {
+      paragraphAfter(createdBlock);
+    }
+  };
+
+  document.querySelectorAll('[data-command], [data-block], [data-inline-code], [data-link]').forEach((button) => {
     button.addEventListener('mousedown', (event) => {
       event.preventDefault();
     });
@@ -357,12 +709,16 @@ const { initialBody = "" } = Astro.props;
 
       focusEditor();
 
-      const formatBlock = button.dataset.formatBlock;
+      const block = button.dataset.block;
       const command = button.dataset.command;
 
-      if (formatBlock) {
-        document.execCommand('formatBlock', false, formatBlock);
-      } else if (command === 'createLink') {
+      if (block === 'pre' || block === 'blockquote') {
+        toggleStandaloneBlock(block);
+      } else if (block) {
+        document.execCommand('formatBlock', false, block);
+      } else if (button.hasAttribute('data-inline-code')) {
+        toggleInlineCode();
+      } else if (button.hasAttribute('data-link')) {
         const href = window.prompt('URL');
         if (href !== null) {
           const safeHref = normalizeLinkHref(href);
@@ -377,33 +733,56 @@ const { initialBody = "" } = Astro.props;
       }
 
       syncBody();
+      saveController.changed();
+      updateToolbarState();
     });
   });
 
-  editor?.addEventListener('input', syncBody);
+  editor?.addEventListener('input', () => {
+    syncBody();
+    saveController.changed();
+    updateToolbarState();
+  });
   editor?.addEventListener('paste', (event) => {
     if (!(editor instanceof HTMLElement)) {
       return;
     }
 
     const text = event.clipboardData?.getData('text/plain') ?? '';
+    event.preventDefault();
     if (!text.trim()) {
       return;
     }
 
-    event.preventDefault();
     document.execCommand('insertHTML', false, textToParagraphHtml(text));
     syncBody();
+    saveController.changed();
   });
   editor?.addEventListener('blur', syncBody);
+  form?.querySelectorAll('input[name="title"], input[name="slug"]').forEach((control) => {
+    control.addEventListener('input', () => saveController.changed());
+  });
+  form?.addEventListener('post-editor:save-draft', (event) => {
+    event.preventDefault();
+    saveController.saveNow();
+  });
+  retryControl?.addEventListener('click', () => saveController.retry());
+  saveDraftControl?.addEventListener('click', () => {
+    form?.dispatchEvent(new CustomEvent('post-editor:save-draft', { bubbles: true }));
+  });
+  document.addEventListener('selectionchange', updateToolbarState);
   form?.addEventListener('submit', () => {
     syncBody();
-    form.querySelectorAll('button[type="submit"]').forEach((button) => {
-      if (button instanceof HTMLButtonElement) {
-        button.disabled = true;
-        button.setAttribute('aria-busy', 'true');
-      }
-    });
+    window.setTimeout(() => {
+      form.querySelectorAll('button[type="submit"]').forEach((button) => {
+        if (button instanceof HTMLButtonElement) {
+          button.disabled = true;
+          button.setAttribute('aria-busy', 'true');
+        }
+      });
+    }, 0);
   });
   syncBody();
+  renderSaveState(saveController.getState());
+  updateToolbarState();
 </script>

@@ -16,11 +16,18 @@
  *   Slug field is read-only in the edit form: changing a slug would silently
  *   orphan the old KV key and break published URLs. A future rename feature
  *   can handle key migration explicitly.
+ *
+ * @decision DEC-BE-005
+ * @title Latest editor snapshot controls save-state truth
+ * @status accepted
+ * @rationale The edit form supplies canonical fields and presentation controls
+ *   to the shared PostEditor controller. Keeping autosave and explicit draft
+ *   save there prevents this page from becoming a second persistence authority.
  */
 
 export const prerender = false;
 
-import type { Runtime } from "@astrojs/cloudflare";
+import { env as cloudflareEnv } from "cloudflare:workers";
 import PostEditor from "../../../../components/PostEditor.astro";
 import type { Env } from "../../../../lib/kv-store.ts";
 import { getBlogPost, type BlogPost } from "../../../../lib/kv-store.ts";
@@ -32,8 +39,7 @@ if (!slug) {
   return Astro.redirect("/admin/posts", 303);
 }
 
-const runtime = (Astro.locals as Runtime<Env>).runtime;
-const env = runtime.env;
+const env = cloudflareEnv as Env;
 
 let post: BlogPost | null = null;
 try {
@@ -130,34 +136,57 @@ const actionUrl = `/admin/api/posts/${slug}`;
         cursor: default;
       }
 
-      .checkbox-row {
-        display: flex;
+      .save-state {
         align-items: center;
-        gap: 0.6rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.65rem 0.9rem;
+        min-height: 2.25rem;
       }
-      .checkbox-row input[type="checkbox"] { width: 1rem; height: 1rem; accent-color: #4ade80; }
-      .checkbox-row label {
-        font-size: 0.875rem;
-        text-transform: none;
-        letter-spacing: normal;
-        color: #a3a3a3;
+
+      .save-status {
+        color: #737373;
+        flex: 1 1 12rem;
+        font-size: 0.8rem;
       }
+      .save-status[data-state="saving"] { color: #facc15; }
+      .save-status[data-state="saved"] { color: #4ade80; }
+      .save-status[data-state="error"] { color: #f87171; }
 
       .form-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
 
-      button[type="submit"] {
-        background: #4ade80;
-        color: #0a0a0a;
-        border: none;
+      button {
         border-radius: 6px;
+        cursor: pointer;
         font-family: inherit;
         font-size: 0.875rem;
         font-weight: 600;
-        padding: 0.55rem 1.4rem;
-        cursor: pointer;
+        padding: 0.55rem 1.1rem;
         transition: opacity 0.15s;
       }
-      button[type="submit"]:hover { opacity: 0.85; }
+      button:hover { opacity: 0.85; }
+      button:focus-visible {
+        outline: 2px solid #4ade80;
+        outline-offset: 2px;
+      }
+      button:disabled { cursor: not-allowed; opacity: 0.55; }
+
+      .btn-primary {
+        background: #4ade80;
+        border: none;
+        color: #0a0a0a;
+      }
+      .btn-secondary {
+        background: #171717;
+        border: 1px solid #333;
+        color: #d4d4d4;
+      }
+      .btn-retry {
+        background: transparent;
+        border: 1px solid #7f1d1d;
+        color: #fca5a5;
+        padding: 0.4rem 0.75rem;
+      }
 
       a.btn-cancel {
         display: inline-block;
@@ -177,6 +206,15 @@ const actionUrl = `/admin/api/posts/${slug}`;
         color: #444;
         margin-top: 0.25rem;
       }
+
+      @media (max-width: 520px) {
+        body { padding: 1.5rem 1rem; }
+        .form-actions > button,
+        .form-actions > .btn-cancel {
+          text-align: center;
+          width: 100%;
+        }
+      }
     </style>
   </head>
   <body>
@@ -185,7 +223,7 @@ const actionUrl = `/admin/api/posts/${slug}`;
       <h1>Edit Post</h1>
 
       <div class="layout">
-        <form method="POST" action={actionUrl} class="form-section">
+        <form method="POST" action={actionUrl} class="form-section" data-edit-post-form>
           <div class="field">
             <label for="title">Title</label>
             <input
@@ -199,12 +237,14 @@ const actionUrl = `/admin/api/posts/${slug}`;
           </div>
 
           <div class="field">
-            <label for="slug-display">Slug</label>
+            <label for="slug">Slug</label>
             <input
               type="text"
-              id="slug-display"
+              id="slug"
+              name="slug"
               value={post.slug}
               readonly
+              aria-readonly="true"
               title="Slug cannot be changed after creation"
             />
             <span class="meta-note">Slug is fixed after creation to preserve published URLs.</span>
@@ -212,18 +252,29 @@ const actionUrl = `/admin/api/posts/${slug}`;
 
           <PostEditor initialBody={storedBody.value} />
 
-          <div class="checkbox-row">
-            <input
-              type="checkbox"
-              id="published"
-              name="published"
-              checked={post.published}
-            />
-            <label for="published">Published</label>
+          <div class="save-state">
+            <span
+              class="save-status"
+              data-post-save-status
+              data-state="saved"
+              aria-live="polite"
+            >Saved</span>
+            <button
+              data-post-save-retry
+              type="button"
+              class="btn-retry"
+              hidden
+            >Retry save</button>
           </div>
 
           <div class="form-actions">
-            <button type="submit">Save changes</button>
+            <button data-post-save-draft type="button" class="btn-secondary">Save draft</button>
+            <button
+              type="submit"
+              class="btn-primary"
+              name={post.published ? undefined : "published"}
+              value={post.published ? undefined : "on"}
+            >{post.published ? "Unpublish" : "Publish"}</button>
             <a href="/admin/posts" class="btn-cancel">Cancel</a>
           </div>
         </form>

@@ -920,6 +920,359 @@ Guardian provision owns any lease/bootstrap transition before source implementat
 
 ---
 
+### Initiative: Rich Blog Editor and Draft Autosave
+**Status:** approved; W-BE-1A and W-BE-1B complete; W-BE-1B passed direct `npm test` (16/16) and `npm run build`; W-BE-1C is in progress
+**Started:** 2026-07-19
+**Workflow:** `blog-editor-experience`
+**Goal:** `g-blog-editor-experience`
+**Planning work item:** `wi-blog-editor-planning`
+**Implementation baseline:** exact local `master` commit `80ce7dee8d79d9b151fa5a1c669239e0484336d7` (`Add fail-closed local auth bypass`), not root HEAD and not `origin/master`
+**Goal:** Make single-owner blog authoring feel like a dependable document editor: common formatting is available without hand-written HTML, drafts save safely to the existing canonical KV record, save state is visible, and preview/public output faithfully reflects the accepted stored HTML.
+
+> The owner currently has a useful zero-dependency rich-text surface, but persistence still behaves like a final form submission. That creates avoidable loss risk during longer writing sessions and leaves formatting, toolbar state, and rendered-output fidelity only partially specified. The root problem is not a need for a CMS or a second draft system; it is that the existing editor and canonical blog mutation path need a durable draft lifecycle.
+
+**Complexity Tier:** Tier 3 (Full) — editor DOM state, autosave concurrency, canonical post identity, authenticated API response behavior, stored-HTML policy, KV persistence, public rendering, accessibility, and real-browser evidence intersect.
+
+**Challenge / Simpler Path:** A packaged editor or separate draft service could provide more features, but would add dependency and state authority. The bounded path delivers the requested value by extending the existing `PostEditor`, forms, shared validators/policy, and create/update handlers. The first valid new-post snapshot creates one unpublished `post:{slug}` KV record; every later save updates that record.
+
+**Dominant Constraints:** preserve one KV authority; preserve shared auth and security policy; zero new dependencies; no production deploy; preserve unrelated root changes and the live `.worktrees/feature-W-SH-2` worktree/preview.
+
+#### Research Gate
+
+Local research is sufficient for this initiative. The exact local `master` baseline, existing `PostEditor.astro`, new/edit forms, create/update handlers, `blog-validation.ts`, `html-policy.ts`, `kv-store.ts`, public renderer, focused tests, current `MASTER_PLAN.md`, and Concrete status were inspected. The user has already fixed the platform and product choices, so no external technology selection remains. If implementation encounters browser-command or Astro response behavior that differs from installed behavior, it must verify that behavior locally and may consult only the relevant official documentation; it must not use that uncertainty to introduce a dependency.
+
+#### Goals
+
+- REQ-BE-GOAL-001: Common blog formatting is available through an accessible, dependency-free editor toolbar and keyboard-compatible editing surface.
+- REQ-BE-GOAL-002: Valid drafts survive navigation or interruption through debounced server autosave to the canonical `BLOG_POSTS` KV record.
+- REQ-BE-GOAL-003: The author always sees an accurate `Saving`, `Saved`, or actionable `Error` state and can explicitly save a draft.
+- REQ-BE-GOAL-004: New posts acquire one canonical identity on the first valid title/slug/body snapshot; the slug is immutable after creation.
+- REQ-BE-GOAL-005: Publishing remains explicit, drafts remain publicly indistinguishable from missing posts, and normal final form operations retain 303 PRG.
+- REQ-BE-GOAL-006: Editor preview and public rendering faithfully display every HTML element accepted from the supported toolbar and safe-paste path.
+
+#### Non-Goals
+
+- REQ-BE-NOGO-001: Images, R2 upload, media management, embeds, captions, or image paste/upload.
+- REQ-BE-NOGO-002: A localStorage, IndexedDB, file-backed, alternate-KV-key, or other parallel draft store.
+- REQ-BE-NOGO-003: Auth-mode, Clerk, owner-policy, middleware, or local-bypass changes.
+- REQ-BE-NOGO-004: Wrangler, deploy, provider, environment, dependency, package-lock, or production changes.
+- REQ-BE-NOGO-005: Collaborative editing, revision history, scheduled publishing, slug rename/migration, or arbitrary user-generated HTML.
+- REQ-BE-NOGO-006: Replacing normal create/update final submissions with client-only navigation; 303 PRG remains the normal final-operation contract.
+
+#### Requirements
+
+**Must-Have (P0)**
+
+- REQ-BE-P0-001: Supported formatting set
+  Acceptance: In both new and edit forms, the editor provides paragraphs, H2, H3, bold, italic, inline code, fenced/display code blocks, blockquotes, ordered lists, unordered lists, links, undo, and redo. Each operation updates the hidden canonical `body` field and survives save/reload.
+
+- REQ-BE-P0-002: Accessible toolbar state
+  Acceptance: Toolbar controls have accessible names and keyboard focus; toggle controls expose pressed/active state that updates as selection/caret moves; heading/block selectors expose the current block state; disabled/unavailable undo and redo state is communicated; no state is conveyed by color alone.
+
+- REQ-BE-P0-003: Safe paste
+  Acceptance: Pasting plain text produces escaped paragraphs/line breaks without executable markup. Pasting rich or hostile content cannot bypass `html-policy.ts`; unsupported or unsafe markup is stripped to safe text at the editor boundary or rejected by the canonical server policy with a visible save error and no KV mutation.
+
+- REQ-BE-P0-004: Canonical new-post creation
+  Acceptance: Before title, slug, and body are valid, autosave performs no write and explains why saving is pending. The first valid autosave or explicit Save draft invokes the existing create authority, writes exactly one `post:{slug}` record with `published=false`, returns canonical slug/identity, and converts the form to update mode without navigation. Duplicate slug returns a visible conflict and creates no alternate key.
+
+- REQ-BE-P0-005: Immutable identity
+  Acceptance: After canonical creation, slug editing is disabled/read-only, every autosave and explicit draft save targets `/admin/api/posts/{canonicalSlug}`, and no update path can create, rename, copy, or orphan a second post key.
+
+- REQ-BE-P0-006: Debounced server autosave
+  Acceptance: Valid title/body/editor changes schedule one debounced authenticated save; only the newest queued snapshot may become the displayed `Saved` state. In-flight edits schedule a later save. Failed requests preserve dirty state and expose retry; they do not report `Saved` or silently discard edits.
+
+- REQ-BE-P0-007: Explicit save and publish separation
+  Acceptance: `Save draft` immediately persists the latest snapshot with `published=false`. Autosave never changes an unpublished record to published or a published record to unpublished merely because the publish checkbox/control was not part of its snapshot. Publishing/unpublishing requires an explicit final operation and retains server validation plus 303 PRG.
+
+- REQ-BE-P0-008: Response-mode compatibility
+  Acceptance: Existing create/update API modules remain the sole mutation routes. Authenticated autosave may request a machine-readable response from those handlers, while ordinary valid form submissions continue returning 303 and existing error status semantics remain stable. Unsupported methods remain 405.
+
+- REQ-BE-P0-009: Faithful preview/public rendering
+  Acceptance: Preview and `/blog/{slug}` render supported paragraph, H2/H3, emphasis, inline code, code block, blockquote, ordered/unordered list, and safe link markup with readable matching styles. Public detail still obtains a validated body and returns 404 for missing or `published=false` records.
+
+- REQ-BE-P0-010: Automated and real-path proof
+  Acceptance: Focused tests cover validation, HTML policy, canonical create/update identity, draft/publish separation, response modes, stale/in-flight autosave behavior at the extracted testable boundary, public draft 404, and source/config invariants. `concrete validate` and a Concrete local preview/browser walkthrough pass without production deployment.
+
+#### Exact Autosave API Contract (no implementer design discretion)
+
+- Autosave requests use the existing form fields plus `_autosave=1` and `Accept: application/json`; both signals are required. Any request missing either signal follows the existing ordinary form path.
+- Create autosave: `POST /admin/api/posts` with `title`, `slug`, `body`, `_autosave=1`; the handler ignores/overrides any client `published` value and persists `published=false`. Success is `201 application/json` with `{"ok":true,"post":{"slug":"<canonical-slug>","published":false}}`.
+- Update autosave: `POST /admin/api/posts/{canonicalSlug}` with `title`, `body`, `_autosave=1`; the route slug is the identity authority, client slug data is ignored, `createdAt` and `slug` remain unchanged, and the existing record's `published` value is preserved. Success is `200 application/json` with `{"ok":true,"post":{"slug":"<canonical-slug>","published":<preserved-boolean>}}`.
+- Autosave failures are `application/json` with `{"ok":false,"error":{"code":"<stable-code>","message":"<actionable-message>"}}`. Status/code mapping: malformed form or validation `400/invalid_request`; unauthorized `401/unauthorized` (or the existing centralized authorization status, including configuration failure, without changing auth); missing update target `404/not_found`; duplicate create slug `409/slug_conflict`; unsupported method remains `405` with `Allow: POST` and existing non-autosave presentation.
+- Ordinary valid create, update, delete, publish, and unpublish submissions retain `303` PRG to `/admin/posts`; their existing validation/error semantics remain unchanged. `_method=delete` is never an autosave operation.
+- First valid create response supplies canonical identity. From then on the client targets only `/admin/api/posts/{canonicalSlug}` and locks slug editing. No alternate endpoint, key, or client persistence is permitted.
+- Browser-native editing commands remain behind the one `PostEditor` adapter. The debounce is one `PostEditor` constant in the 500–1500 ms range and tests use a deterministic boundary, not wall-clock delay.
+
+#### Architectural Decisions
+
+- **DEC-BE-001 — Extend the zero-dependency editor.** Keep `PostEditor.astro`, contenteditable/vanilla JS, and the hidden `body` submission contract. A packaged editor is disproportionate and forbidden by the approved dependency boundary. Addresses REQ-BE-P0-001 through REQ-BE-P0-003.
+- **DEC-BE-002 — KV record is the only draft authority.** Drafts are normal `BlogPost` records with `published=false` under the existing `post:{slug}` key. No temporary draft key or client persistence may coexist. Addresses REQ-BE-P0-004 through REQ-BE-P0-007.
+- **DEC-BE-003 — First valid snapshot claims immutable identity.** The create handler owns duplicate detection and canonical creation; its autosave response returns the slug, after which all writes use the update handler and slug UI locks. Addresses REQ-BE-P0-004 and REQ-BE-P0-005.
+- **DEC-BE-004 — Dual response presentation, single mutation authority.** Existing API handlers may return an authenticated machine-readable autosave response while preserving 303 PRG for ordinary final forms. No `/drafts` endpoint is added. Addresses REQ-BE-P0-007 and REQ-BE-P0-008.
+- **DEC-BE-005 — Latest snapshot controls UI truth.** The editor owns dirty/saving/saved/error presentation and sequences requests so an older response cannot mark newer content saved. KV remains last-write persistence authority; the client does not become a second record authority. Addresses REQ-BE-P0-006.
+- **DEC-BE-006 — Shared accepted-HTML vocabulary.** Toolbar output, paste normalization, `html-policy.ts`, preview, and public styles must agree on the supported element/attribute set. Addresses REQ-BE-P0-001, REQ-BE-P0-003, and REQ-BE-P0-009.
+
+#### State Authority Map
+
+| State domain | Canonical authority | Readers/writers and integration surfaces | Invariant |
+|--------------|---------------------|------------------------------------------|-----------|
+| Post persistence and identity | `BLOG_POSTS` via `src/lib/kv-store.ts`, key `post:{slug}` | Create/update APIs, admin edit loader, public helpers/pages | One record per immutable slug; drafts are `published=false`, not separate objects. |
+| Input validation | `src/lib/blog-validation.ts` | Both API handlers, tests, autosave error presentation | Create/update/autosave do not duplicate validation rules. |
+| Accepted stored HTML | `src/lib/html-policy.ts` | `PostEditor.astro`, create/update APIs, edit loader, public renderer, tests | Unsafe markup never reaches KV; supported editor output is accepted consistently. |
+| Authentication/authorization | Existing Clerk middleware and `src/lib/admin-auth.ts` | Admin pages and both API handlers | Unchanged; autosave receives exactly the same owner enforcement. |
+| Editor document and save state | One `PostEditor.astro` instance plus its containing form | Hidden `body`, title/slug fields, save controls, preview | DOM/hidden body synchronize before every snapshot; latest dirty snapshot controls status. |
+| Publish intent | Explicit form action handled by existing create/update APIs | Publish control, API validation, KV `published`, public reader | Autosave/Save draft cannot implicitly publish; public readers filter drafts. |
+| Public body presentation | Validated body in `src/pages/blog/[slug].astro` and its scoped styles | `public-blog.ts`, HTML policy, browser preview | Accepted elements are readable; missing/draft remains 404. |
+| Operational evidence | Concrete validation/preview plus `cc-policy` evaluation state | Implementer, Reviewer, Guardian | No direct production deploy; evidence is tied to reviewed HEAD. |
+
+#### Removal Targets
+
+- Supersede submit-only persistence behavior in new/edit forms with one shared save-state/autosave controller; do not leave separate create/edit autosave implementations.
+- Remove any duplicate editor formatting/paste/status logic introduced outside `PostEditor.astro` or its single extracted helper.
+- Remove editable-slug behavior immediately after first canonical creation; do not retain a hidden rename path.
+- Remove any temporary draft-key, localStorage, file, or second endpoint experiment before review.
+- Replace preview/public style gaps for the supported HTML vocabulary in the same change; do not document rendering fidelity without implementing it.
+
+#### Alternatives Gate
+
+- **Packaged rich editor:** mature command/state model, but adds dependency, bundle, migration, and policy complexity. Rejected for this bounded single-author feature.
+- **Separate `/drafts` API or browser storage:** simpler optimistic creation UX, but creates identity and recovery conflicts with KV. Rejected because it establishes a second authority.
+- **Recommended and approved:** one enhanced `PostEditor`, one autosave controller, existing create/update handlers with negotiated response presentation, and canonical unpublished KV records.
+
+#### Wave Decomposition
+
+**Dependency graph:** W-BE-1A -> W-BE-1B -> W-BE-1C -> W-BE-1D -> W-BE-1E -> W-BE-1F -> cumulative Reviewer -> Guardian land. All slices run serially on the same existing worktree; no reprovisioning or new branch/worktree.
+
+**Waves 1–6:** W-BE-1A create API; 1B update API; 1C editor/state machine; 1D new form; 1E edit form; 1F public rendering. **Wave 7:** cumulative Reviewer then Guardian land.
+
+**Critical path:** sync 1A -> 1A -> sync 1B -> 1B -> 1C -> 1D -> 1E -> 1F -> cumulative sync -> Reviewer -> Guardian land.
+
+**Max width:** 1.
+
+##### W-BE-1 Cumulative Final Contract: Rich Editor, Canonical Draft Autosave, and Rendering Fidelity
+
+This XL contract is retained only as cumulative final Reviewer/Guardian authority. Its broad manifest is never implementer scope; only the bounded slices below may be synchronized for implementation.
+
+- **Runtime ID:** `wi-blog-editor-planning` (the approved bounded implementation contract carried forward from planning)
+- **Weight:** XL
+- **Gate:** review
+- **Deps:** Guardian operational initialization/reconciliation in the existing worktree at exact local master `80ce7dee8d79d9b151fa5a1c669239e0484336d7`
+- **Integration:** `PostEditor`, new/edit form shells, create/update APIs, shared validation and HTML policy, KV helper only if the existing helper lacks an atomic required operation, public renderer/styles, focused tests, Concrete validation and preview.
+
+###### Evaluation Contract
+
+**Required tests**
+- Extend `tests/blog-hardening.test.mjs` (or add focused dependency-free files under `tests/**`) and pass the existing declared Node test command.
+- Test every supported editor HTML shape against the shared HTML policy: paragraph, H2/H3, strong/bold, emphasis/italic, inline code, pre/code block, blockquote, ordered/unordered list/list item, and safe relative/http(s)/mailto link.
+- Test create autosave success returns canonical identity and stores one unpublished record; invalid/duplicate create creates no record or alternate key.
+- Test update autosave preserves immutable slug/created time and cannot implicitly toggle publish state; explicit Save draft stores `published=false`; explicit final publish/unpublish preserves 303 PRG.
+- Test machine-readable and ordinary form response modes, auth denial/no-mutation, invalid HTML/no-mutation, missing route, and unsupported method behavior.
+- Test the autosave state machine/controller deterministically: debounce coalescing, edit-during-flight follow-up, stale response suppression, visible error, dirty-state retention, and retry-to-saved transition.
+- Preserve and pass existing auth, KV listing, public draft 404, HTML safety, config, and source-invariant tests.
+
+**Required real-path checks**
+- Guardian proves the implementation worktree base is exact local commit `80ce7dee8d79d9b151fa5a1c669239e0484336d7`; it is neither the dirty root HEAD nor `origin/master`.
+- Through Concrete preview in that isolated worktree, open new post, enter valid title/body, observe debounced creation, verify slug locks and Saved state, reload the edit URL, edit and observe autosave, force/recover from a validation or network failure, explicitly Save draft, and explicitly publish.
+- In a real browser, exercise every toolbar control, keyboard focus, active/pressed state, safe plain-text paste, undo/redo, preview fidelity, responsive layout, and reload persistence.
+- Verify the created draft returns public 404 and does not appear in the public list; after explicit publish, verify public detail renders every supported element readably and safe links work.
+- Run the declared focused tests and `concrete validate` on the final implementation HEAD. No production deploy command may run.
+
+**Required authority invariants**
+- `BLOG_POSTS` and `post:{slug}` remain the only post/draft persistence and identity authority.
+- `blog-validation.ts`, `html-policy.ts`, existing admin auth, and `kv-store.ts` remain their respective single authorities; route or editor checks may adapt errors but may not fork policy.
+- First valid create yields one unpublished canonical record; slug is immutable thereafter.
+- Latest dirty snapshot, not request completion order, controls save-state truth.
+- Autosave never changes publish state accidentally; public readers never return drafts.
+
+**Required integration points**
+- `src/components/PostEditor.astro`; both admin post forms; both existing admin post API modules.
+- Shared blog validation and HTML policy; `kv-store.ts` only when required to preserve one-write semantics.
+- Public detail renderer and styles; `public-blog.ts` only if tests demonstrate a necessary integration adjustment.
+- Existing Clerk/owner middleware behavior, admin list/edit navigation, hidden `body` form contract, focused tests, and Concrete validation/preview.
+
+**Forbidden shortcuts**
+- No auth-mode, middleware, owner-policy, local-bypass, Wrangler, deploy, provider, environment, dependency, package-lock, R2, or image-upload changes.
+- No localStorage, IndexedDB, file store, temporary KV draft prefix/key, duplicate canonical record, `/drafts` endpoint, or parallel create/update logic.
+- No autosave that silently publishes, overwrites a newer dirty snapshot’s status, drops edits after failure, or treats an HTTP error as Saved.
+- No client-only validation as authority, unsafe `innerHTML` paste insertion, bypass of `html-policy.ts`, or public draft exposure.
+- No direct `npm` build/deploy, Wrangler deploy, or production operation; use Concrete authority.
+- Do not touch the dirty root’s unrelated changes or `.worktrees/feature-W-SH-2` and its live preview.
+
+**Rollback boundary**
+- The whole W-BE-1 commit is the rollback unit. Do not migrate KV schema or rewrite existing keys, so rollback restores the prior editor/API behavior without data conversion. Draft records created during local preview must remain confined to local preview state.
+
+**Acceptance notes**
+- Browser-native command APIs are acceptable only behind the single editor adapter and only when real-browser active-state behavior passes.
+- Machine-readable autosave responses may be JSON, but normal final form success must remain 303 PRG.
+
+**Ready-for-guardian definition**
+- Reviewer records `REVIEW_VERDICT=ready_for_guardian` for the exact final HEAD after confirming every required test, real-path check, authority invariant, integration point, forbidden shortcut, and scope boundary.
+- `cc-policy` scope check is clean; focused tests and `concrete validate` pass on that same HEAD; browser evidence identifies routes/scenarios and final preview provenance.
+- No production deploy occurred, no forbidden file changed, no draft was publicly exposed, and no ambiguity remains about base SHA or evaluated SHA.
+
+###### Scope Manifest
+
+**Allowed files/directories**
+- `MASTER_PLAN.md` (planner-owned W-BE-1 initiative projection only)
+- `src/components/PostEditor.astro`
+- `src/pages/admin/posts/new.astro`
+- `src/pages/admin/posts/[slug]/edit.astro`
+- `src/pages/admin/api/posts/index.ts`
+- `src/pages/admin/api/posts/[slug].ts`
+- `src/lib/blog-validation.ts`
+- `src/lib/html-policy.ts`
+- `src/lib/kv-store.ts`
+- `src/lib/public-blog.ts`
+- `src/pages/blog/[slug].astro`
+- `tests/**`
+- `tmp/**`
+
+**Required files/directories**
+- `MASTER_PLAN.md` (exact W-BE-1 initiative projection; no permanent-section changes)
+- `src/components/PostEditor.astro`
+- `src/pages/admin/posts/new.astro`
+- `src/pages/admin/posts/[slug]/edit.astro`
+- `src/pages/admin/api/posts/index.ts`
+- `src/pages/admin/api/posts/[slug].ts`
+- `src/pages/blog/[slug].astro`
+- `tests/**`
+
+**Forbidden touch points**
+- `src/middleware.ts`
+- `src/lib/admin-auth.ts`
+- `wrangler.toml`
+- `astro.config.mjs`
+- `package.json`
+- `package-lock.json`
+- `.concrete/**`
+- `.claude/**`
+- `.codex/**`
+- `.git/**`
+- `.gitignore`
+- `.dev.vars*`
+- `.env*`
+- `public/**`
+- `dist/**`
+- `node_modules/**`
+- `.worktrees/feature-W-SH-2/**`
+- Cloudflare production state, R2/image-upload surfaces, and every file outside the provisioned implementation worktree
+
+**Expected state authorities touched**
+- Editor DOM/hidden-body/save-state authority (`PostEditor.astro`)
+- Canonical create/update API response presentation
+- Blog validation and accepted-HTML authorities only if supported vocabulary requires alignment
+- Canonical `BLOG_POSTS` persistence helper only if needed for one-record semantics
+- Public validated-body presentation/styles
+- Focused test and Concrete evaluation state
+
+#### Bounded Sequential Implementation Slices
+
+Each slice is Gate `review`, max width 1, allows planner-owned `MASTER_PLAN.md`, one source file, `tests/blog-hardening.test.mjs`, and `tmp/**`; required implementation paths are only the named source and test file. Every unlisted path is forbidden.
+
+##### W-BE-1A: Create Autosave JSON Response
+- **Runtime ID:** `wi-blog-editor-1a-create-response`; **Weight:** S; **Deps:** none; **Integration:** create route with unchanged shared validation/auth/KV.
+- **Evaluation Contract:** Tests and real-path checks prove dual-signal negotiation, 201 schema, forced `published=false`, canonical slug, 400 invalid/no mutation, 409 duplicate/no mutation, ordinary 303, centralized auth behavior, and 405. Authorities remain the create route, BLOG_POSTS key, shared validation/auth/KV. No new endpoint, helper authority, auth/KV/config/dependency/deploy edit. Ready means focused tests and exact scope pass; continue to 1B, never Guardian directly.
+- **Scope Manifest:** Allowed: `MASTER_PLAN.md`, `src/pages/admin/api/posts/index.ts`, `tests/blog-hardening.test.mjs`, `tmp/**`. Required: route and test file. Every other source/test/config/dependency/worktree path is forbidden. Authorities touched: create response presentation and test evidence.
+
+##### W-BE-1B: Update Autosave JSON Response
+- **Runtime ID:** `wi-blog-editor-1b-update-response`; **Weight:** S; **Deps:** 1A; **Integration:** update route with unchanged record/auth/validation/KV authorities.
+- **Evaluation Contract:** Tests and real path prove dual-signal 200 schema, route-slug identity, unchanged slug/createdAt, preserved existing publish bit, 400/404 JSON no-mutation, delete exclusion, ordinary 303, auth, and 405. No migration, alternate record, implicit publish, helper/config/deploy edit. Ready means tests/scope pass; continue to 1C.
+- **Scope Manifest:** Allowed: plan, `src/pages/admin/api/posts/[slug].ts`, focused test, tmp. Required: route and test. Every other path forbidden. Authorities touched: update response/preservation semantics and evidence.
+
+##### W-BE-1C: Editor and Save-State Controller
+- **Runtime ID:** `wi-blog-editor-1c-editor-state`; **Weight:** M; **Deps:** 1B; **Integration:** hidden body, containing form, fixed API contract.
+- **Gate:** review.
+- **Evaluation Contract:**
+  - **Required tests:** Extend `tests/blog-hardening.test.mjs` with deterministic source/controller behavior checks for the complete toolbar vocabulary: paragraph, H2, H3, bold, italic, inline code, code block, blockquote, ordered list, unordered list, link, undo, redo, and clear formatting. Prove every command synchronizes the editor DOM to the hidden canonical `body` field. Prove toggle controls expose accurate accessible names and `aria-pressed`, undo/redo expose accurate disabled state, and block-format state follows caret/selection without color-only signaling. Prove paste always inserts escaped plain text with preserved paragraph/line-break intent and never inserts pasted HTML. Prove the sole debounce constant is exactly 750 ms; rapid edits coalesce to the latest snapshot; at most one request is in flight; edits during flight retain only one latest-snapshot follow-up; an older response cannot clear newer dirty state or replace newer status; failures retain dirty state and expose retry; retry persists the latest snapshot. Prove the first successful create response switches subsequent requests to the canonical update URL, locks the canonical slug, and ignores stale or conflicting identity responses. Prove explicit `Save draft` dispatch immediately bypasses debounce and uses the same queue/controller rather than a second save path.
+  - **Required real-path checks:** Exercise `PostEditor.astro` in an isolated containing form with title, slug, hidden body, action, status, retry, and Save draft controls plus a stubbed fetch sequence. Verify keyboard focus and every toolbar control; plain-text paste; 750 ms coalescing; edit during a delayed request followed by exactly one latest-snapshot request; stale success after a newer edit; failure then retry; first create success followed by slug lock and canonical update targeting; and explicit Save draft without navigation. Run direct `npm test` and `npm run build`.
+  - **Required authority invariants:** One controller in `PostEditor.astro` owns editor DOM, hidden `body`, dirty/saving/saved/error state, debounce timer, request sequencing, retry snapshot, canonical slug, and save target. The existing create/update APIs remain the only persistence and identity authorities. The first accepted create response may establish canonical slug once; thereafter route slug is immutable. No browser persistence or alternate draft state exists.
+  - **Required integration points:** The containing form supplies standard `title`, `slug`, `body`, and `action` values. `PostEditor` synchronizes standard input/form behavior and documents one `post-editor:save-draft` DOM event: the explicit Save draft control dispatches this bubbling event on the containing form, and the single editor controller snapshots the current fields and queues an immediate draft save. Autosave requests retain the established `_autosave=1` plus `Accept: application/json` contract; create success consumes `{ok:true,post:{slug,published}}` and switches to `/admin/api/posts/{canonicalSlug}`. W-BE-1A/1B source and test behavior must remain green.
+  - **Forbidden shortcuts:** No dependency, framework, external editor, localStorage/IndexedDB/sessionStorage, new endpoint, route edit, auth/config/image/deploy change, pasted `text/html` insertion, parallel timer/request queue, second Save draft handler, overlapping requests, arbitrary multiple follow-up queue, optimistic slug authority, or clearing dirty/error state from a stale response. Do not recreate Concrete.
+  - **Rollback boundary:** Only `src/components/PostEditor.astro` and the W-BE-1C assertions in `tests/blog-hardening.test.mjs`; preserve cumulative W-BE-1A/1B edits.
+  - **Ready-for-guardian definition:** This intermediate slice is ready to continue to W-BE-1D, not independently Guardian-ready, only when direct `npm test` and `npm run build` pass, the isolated real-path sequence passes, changed paths comply exactly with this manifest, all required formatting/accessibility/paste/concurrency/error/identity/event checks are evidenced, and cumulative W-BE-1A/1B remains green.
+- **Scope Manifest:**
+  - **Allowed files/directories:** `MASTER_PLAN.md` (planner-owned projection only), `src/components/PostEditor.astro`, `tests/blog-hardening.test.mjs`, and `tmp/**`.
+  - **Required files/directories:** `src/components/PostEditor.astro` and `tests/blog-hardening.test.mjs`.
+  - **Forbidden touch points:** Every other path, including both admin API routes, new/edit pages, validation/HTML/KV/auth/public/config/package files, `.concrete/**`, generated output, other worktrees, git history, and production state.
+  - **Expected state authorities touched:** Editor DOM and hidden-body synchronization; transient dirty/saving/saved/error and retry state; 750 ms debounce and single-flight/latest-follow-up sequencing; canonical client-side slug/save-target projection after create response; explicit Save draft event integration; focused evidence. Persistence, validation, HTML policy, auth, and API identity authorities are read-only.
+
+##### W-BE-1D: New Form Wiring
+- **Runtime ID:** `wi-blog-editor-1d-new-form`; **Weight:** S; **Deps:** 1C; **Integration:** PostEditor and create API contracts.
+- **Evaluation Contract:** Tests/real path prove pending-before-valid, first draft create, Saved/locked slug/canonical update action, visible duplicate/invalid no-mutation, Save draft, and ordinary explicit publish 303. Create route owns identity and no second controller/storage/endpoint is allowed. Ready continues to 1E.
+- **Scope Manifest:** Allowed: plan, `src/pages/admin/posts/new.astro`, focused test, tmp. Required: form and test. Every other path forbidden. Authority touched: new-form wiring/presentation.
+
+##### W-BE-1E: Edit Form Wiring
+- **Runtime ID:** `wi-blog-editor-1e-edit-form`; **Weight:** S; **Deps:** 1D; **Integration:** PostEditor, update API, validated loader.
+- **Evaluation Contract:** Tests/real path prove immutable canonical action, update-mode autosave/Save draft, dirty failure/retry, and ordinary explicit publish/unpublish 303. Route/KV identity remains canonical; no duplicate controller or loader/auth/public/config edit. Ready continues to 1F.
+- **Scope Manifest:** Allowed: plan, `src/pages/admin/posts/[slug]/edit.astro`, focused test, tmp. Required: form and test. Every other path forbidden. Authority touched: edit-form wiring/presentation.
+
+##### W-BE-1F: Public Rendering Fidelity
+- **Runtime ID:** `wi-blog-editor-1f-public-rendering`; **Weight:** S; **Deps:** 1E; **Integration:** validated body and existing publication filter.
+- **Evaluation Contract:** Tests/browser proof cover readable styles for every accepted element, draft/missing 404, listing exclusion, explicit-publish fidelity, focused suite, and cumulative Concrete validation. HTML policy/public helper remain authorities; helper edits require a separate proven slice. Ready triggers cumulative Reviewer scope.
+- **Scope Manifest:** Allowed: plan, `src/pages/blog/[slug].astro`, focused test, tmp. Required: page and test. Every other path forbidden. Authority touched: public validated-body presentation/styles.
+
+For every slice, required authority invariants are the State Authority Map; required integration is the named source plus already-landed predecessors; forbidden shortcuts are the cumulative contract plus every out-of-scope path; rollback is the named source/test delta; ready requires executable focused tests and clean exact scope. Helper authority files may be activated only after a failing check proves necessity, as a new serial item with one helper source plus the same test file and a planner-synchronized contract.
+
+#### Cumulative Continuation and Provisioning
+
+Use the existing worktree and active implementer lease. Do not reprovision, branch, rebase, reset, touch unrelated root changes, or touch W-SH-2. W-BE-1A is current; Planner syncs each successor before work. Intermediate slices are cumulative, not independently landable. After 1F/helper completion, sync the cumulative final contract and exact changed-file manifest for Reviewer, then Guardian. The missing `~/.codex/runtime/cli.py` marker warning is external only; do not edit `~/.codex`. No production deploy.
+
+#### Direct Tooling Supersession (2026-07-23)
+
+The user removed Concrete from this project because its generated authority,
+network-dependent validation, and role gates were obstructing routine editor
+development. This supersedes DEC-SH-005, REQ-SH-GOAL-007, REQ-SH-P0-008, and
+every Concrete-only validation or preview requirement.
+
+- Validation uses `npm test` and `npm run build`.
+- Local verification uses `npm run dev` or `npm run preview`.
+- Project `.concrete` state, hooks, documentation, and the `concrete-agent`
+  skill are removed and must not be recreated.
+- Production deployment still requires explicit user approval.
+
+#### W-BE-1B Activation Projection (2026-07-23)
+
+This activation supersedes the earlier continuation paragraph and every
+Concrete-only executable check in W-BE-1B through W-BE-1F, conditional helper
+slices, and cumulative review.
+
+- W-BE-1A is complete with cumulative evidence: direct `npm test` passed all
+  13 tests and direct `npm run build` passed.
+- W-BE-1B (`wi-blog-editor-1b-update-response`) is the sole in-progress slice.
+- W-BE-1B retains its existing Evaluation Contract, authority invariants,
+  integration points, forbidden shortcuts, rollback boundary, and
+  ready-for-guardian definition except that executable evidence is now direct
+  `npm test`, direct `npm run build`, and local update-then-publish/unpublish
+  verification through `npm run dev`.
+- W-BE-1C through W-BE-1F, any conditional helper slice, and cumulative review
+  use direct `npm test`, `npm run build`, and affected-route verification
+  through `npm run dev`. `.concrete/**` must not be recreated.
+- Runtime implementation scope is exactly `MASTER_PLAN.md`,
+  `src/pages/admin/api/posts/[slug].ts`,
+  `tests/blog-hardening.test.mjs`, and `tmp/**`. The route and focused test are
+  required implementation files; every other path is forbidden.
+- The existing `feature/W-BE-1` worktree remains authoritative. Do not
+  reprovision, branch, rebase, reset, touch unrelated root changes, or touch
+  `.worktrees/feature-W-SH-2`. Production deployment remains forbidden.
+
+#### W-BE-1C Activation Projection (2026-07-23)
+
+This activation supersedes W-BE-1B's in-progress status and its runtime scope.
+
+- W-BE-1B (`wi-blog-editor-1b-update-response`) is complete based on direct
+  `npm test` passing 16/16 tests and successful direct `npm run build`.
+- W-BE-1C (`wi-blog-editor-1c-editor-state`) is the sole in-progress slice.
+- Its executable Evaluation Contract and Scope Manifest are the expanded
+  W-BE-1C records above; they preserve cumulative W-BE-1A/1B and fix the
+  editor/controller integration contract without granting form-page edits.
+- Runtime implementation scope is exactly `MASTER_PLAN.md`,
+  `src/components/PostEditor.astro`, `tests/blog-hardening.test.mjs`, and
+  `tmp/**`; the component and focused test are required.
+- Direct `npm test`, `npm run build`, and the isolated component real-path
+  exercise are the evidence authorities. No dependency, local storage,
+  Concrete, image, auth/config, commit, push, or deploy operation is allowed.
+
+---
 ## Completed Initiatives
 
 | Initiative | Period | Phases | Key Decisions | Archived |

@@ -20,12 +20,11 @@
 
 export const prerender = false;
 
-import type { Runtime } from "@astrojs/cloudflare";
+import { env as cloudflareEnv } from "cloudflare:workers";
 import type { Env } from "../../lib/kv-store.ts";
 import { getPublishedBlogPost } from "../../lib/public-blog.ts";
 
-const runtime = (Astro.locals as Runtime<Env>).runtime;
-const env = runtime.env;
+const env = cloudflareEnv as Env;
 
 const { slug } = Astro.params;
 let result: Awaited<ReturnType<typeof getPublishedBlogPost>>;
@@ -191,6 +190,7 @@ const formatDate = (iso: string): string => {
         color: #d4d4d4;
         font-size: 1rem;
         line-height: 1.75;
+        overflow-wrap: break-word;
       }
 
       .post-body :global(h2) {
@@ -214,14 +214,32 @@ const formatDate = (iso: string): string => {
         margin-bottom: 1.25rem;
       }
 
+      .post-body :global(strong) {
+        color: #f4f4f5;
+        font-weight: 600;
+      }
+
+      .post-body :global(em) {
+        color: #e4e4e7;
+        font-style: italic;
+      }
+
       .post-body :global(a) {
         color: #4ade80;
         text-decoration: underline;
-        text-underline-offset: 2px;
+        text-decoration-thickness: 0.08em;
+        text-underline-offset: 0.2em;
+        border-radius: 0.125rem;
       }
 
       .post-body :global(a:hover) {
         color: #86efac;
+      }
+
+      .post-body :global(a:focus-visible) {
+        color: #bbf7d0;
+        outline: 2px solid #4ade80;
+        outline-offset: 3px;
       }
 
       .post-body :global(code) {
@@ -241,32 +259,52 @@ const formatDate = (iso: string): string => {
         border-radius: 0.5rem;
         padding: 1rem 1.25rem;
         overflow-x: auto;
+        max-width: 100%;
         margin-bottom: 1.25rem;
+        line-height: 1.6;
+        scrollbar-color: #52525b #18181b;
       }
 
       .post-body :global(pre code) {
+        display: block;
         background: none;
         border: none;
         padding: 0;
         font-size: 0.875rem;
+        white-space: pre;
+        overflow-wrap: normal;
       }
 
       .post-body :global(blockquote) {
         border-left: 3px solid #4ade80;
-        padding-left: 1rem;
-        margin: 1.25rem 0;
-        color: #a1a1aa;
+        padding: 0.125rem 0 0.125rem 1rem;
+        margin: 1.5rem 0;
+        color: #b4b4bd;
         font-style: italic;
       }
 
-      .post-body :global(ul),
       .post-body :global(ol) {
-        padding-left: 1.5rem;
+        padding-left: 1.75rem;
         margin-bottom: 1.25rem;
       }
 
+      .post-body :global(ol) {
+        list-style-type: decimal;
+      }
+
+      .post-body :global(ul) {
+        padding-left: 1.75rem;
+        margin-bottom: 1.25rem;
+        list-style-type: disc;
+      }
+
       .post-body :global(li) {
-        margin-bottom: 0.375rem;
+        padding-left: 0.25rem;
+        margin-bottom: 0.5rem;
+      }
+
+      .post-body :global(li::marker) {
+        color: #71717a;
       }
 
       .post-body :global(hr) {
@@ -285,6 +323,12 @@ const formatDate = (iso: string): string => {
       @media (max-width: 480px) {
         .container {
           padding: 2rem 1.25rem;
+        }
+
+        .post-body :global(pre) {
+          margin-inline: -0.25rem;
+          padding: 0.875rem 1rem;
+          border-radius: 0.375rem;
         }
       }
     </style>

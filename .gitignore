@@ -94,6 +94,3 @@ temp/
 
 # Astro
 .vercel/
-
-# Concrete CLI
-.concrete/

@@ -19,12 +19,11 @@
 
 export const prerender = false;
 
-import type { Runtime } from "@astrojs/cloudflare";
+import { env as cloudflareEnv } from "cloudflare:workers";
 import type { Env } from "../../../lib/kv-store";
 import { listAllPosts, type PostMetadata } from "../../../lib/kv-store";
 
-const runtime = (Astro.locals as Runtime<Env>).runtime;
-const env = runtime.env;
+const env = cloudflareEnv as Env;
 
 let posts: PostMetadata[] = [];
 let error: string | null = null;

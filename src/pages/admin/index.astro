@@ -19,14 +19,14 @@
  *   session, and hosted sign-out behavior behind the shared mode authority.
  */
 
-import type { Runtime } from "@astrojs/cloudflare";
+import { env as cloudflareEnv } from "cloudflare:workers";
 import { resolveAdminAuthMode } from "../../lib/admin-auth.ts";
 import type { Env } from "../../lib/kv-store.ts";
 
 export const prerender = false;
 
-const runtime = (Astro.locals as Runtime<Env>).runtime;
-const isLocal = resolveAdminAuthMode(runtime?.env) === "local";
+const env = cloudflareEnv as Env;
+const isLocal = resolveAdminAuthMode(env) === "local";
 const auth = isLocal ? null : Astro.locals.auth();
 const userId = auth?.userId;
 const sessionId = auth?.sessionId;

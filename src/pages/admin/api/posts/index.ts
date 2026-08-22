@@ -22,10 +22,16 @@
  * @rationale Route-local regexes and body checks were removed in favor of
  *   src/lib/blog-validation.ts and src/lib/html-policy.ts, which are the
  *   single write-path authorities for form data and stored HTML safety.
+ *
+ * @decision DEC-BE-004
+ * @title Dual response presentation through the canonical create route
+ * @status accepted
+ * @rationale Autosave opts into JSON only with both its form marker and Accept
+ *   header. The same auth, validation, duplicate check, and KV write sequence
+ *   remains authoritative while ordinary forms retain their 303 response.
  */
 
 import type { APIContext } from "astro";
-import type { Runtime } from "@astrojs/cloudflare";
 import type { Env } from "../../../../lib/kv-store.ts";
 import { getBlogPost, putBlogPost } from "../../../../lib/kv-store.ts";
 import {
@@ -33,42 +39,100 @@ import {
   authorizeAdminOwner,
 } from "../../../../lib/admin-auth.ts";
 import { validateCreatePostForm } from "../../../../lib/blog-validation.ts";
+import { authorizeMutationOrigin } from "../../../../lib/request-security.ts";
 
 export const prerender = false;
 
-type AdminLocals = Runtime<Env> & {
+type AdminLocals = {
+  runtime?: { env: Env };
   auth?: () => { userId?: string | null };
 };
 
+async function resolveEnv(locals: AdminLocals): Promise<Env> {
+  const injected = locals.runtime
+    ? Object.getOwnPropertyDescriptor(locals.runtime, "env")?.value as Env | undefined
+    : undefined;
+  if (injected) return injected;
+  return (await import("cloudflare:workers")).env as Env;
+}
+
+function autosaveJson(
+  body:
+    | { ok: true; post: { slug: string; published: false } }
+    | { ok: false; error: { code: string; message: string } },
+  status: number
+): Response {
+  return Response.json(body, { status });
+}
+
 export async function POST(context: APIContext): Promise<Response> {
   const locals = context.locals as AdminLocals;
-  const runtime = locals.runtime;
-  const env = runtime.env;
+  const env = await resolveEnv(locals);
+  const originFailure = authorizeMutationOrigin(context.request, env);
+  if (originFailure) {
+    return originFailure;
+  }
+  const acceptsJson = context.request.headers
+    .get("Accept")
+    ?.split(",")
+    .some((value) => value.trim().split(";", 1)[0] === "application/json") ?? false;
+
+  let formData: FormData | undefined;
+  if (acceptsJson) {
+    try {
+      formData = await context.request.formData();
+    } catch {
+      return new Response("Invalid form data", { status: 400 });
+    }
+  }
+  const isAutosave = acceptsJson && formData?.get("_autosave") === "1";
+
   const owner = authorizeAdminOwner(locals.auth?.().userId, env);
   if (!owner.ok) {
+    if (isAutosave) {
+      return autosaveJson({
+        ok: false,
+        error: { code: "unauthorized", message: owner.message },
+      }, owner.status);
+    }
     return adminAuthorizationResponse(owner);
   }
 
-  let formData: FormData;
-  try {
-    formData = await context.request.formData();
-  } catch {
-    return new Response("Invalid form data", { status: 400 });
+  if (!formData) {
+    try {
+      formData = await context.request.formData();
+    } catch {
+      return new Response("Invalid form data", { status: 400 });
+    }
   }
 
   const input = validateCreatePostForm(formData);
   if (!input.ok) {
+    if (isAutosave) {
+      return autosaveJson({
+        ok: false,
+        error: { code: "invalid_request", message: input.error },
+      }, 400);
+    }
     return new Response(input.error, { status: 400 });
   }
 
   const existing = await getBlogPost(env, input.value.slug);
   if (existing !== null) {
-    return new Response(`A post with slug "${input.value.slug}" already exists`, {
+    const message = `A post with slug "${input.value.slug}" already exists`;
+    if (isAutosave) {
+      return autosaveJson({
+        ok: false,
+        error: { code: "slug_conflict", message },
+      }, 409);
+    }
+    return new Response(message, {
       status: 409,
     });
   }
 
   const now = new Date().toISOString();
+  const published = isAutosave ? false : input.value.published;
   await putBlogPost(env, {
     slug: input.value.slug,
     title: input.value.title,
@@ -76,9 +140,15 @@ export async function POST(context: APIContext): Promise<Response> {
     author: "George Hyde",
     createdAt: now,
     updatedAt: now,
-    published: input.value.published,
+    published,
   });
 
+  if (isAutosave) {
+    return autosaveJson({
+      ok: true,
+      post: { slug: input.value.slug, published: false },
+    }, 201);
+  }
   return context.redirect("/admin/posts", 303);
 }
 

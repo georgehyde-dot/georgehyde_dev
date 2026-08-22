@@ -35,7 +35,9 @@ export type AdminAuthMode = "local" | "production";
 export function resolveAdminAuthMode(
   env: AdminOwnerEnv | null | undefined
 ): AdminAuthMode {
-  return env?.LOCAL_AUTH_BYPASS === "true" ? "local" : "production";
+  return env?.ENVIRONMENT === "local" && env.LOCAL_AUTH_BYPASS === "true"
+    ? "local"
+    : "production";
 }
 
 export function authorizeAdminOwner(

@@ -19,14 +19,11 @@
 
 export const prerender = false;
 
-import type { Runtime } from "@astrojs/cloudflare";
+import { env as cloudflareEnv } from "cloudflare:workers";
 import type { Env } from "../../lib/kv-store";
 import { listPublishedPosts, type PostMetadata } from "../../lib/kv-store";
 
-// Access Cloudflare KV via the adapter runtime context.
-// Astro.locals.runtime.env is typed via the Runtime<Env> generic.
-const runtime = (Astro.locals as Runtime<Env>).runtime;
-const env = runtime.env;
+const env = cloudflareEnv as Env;
 
 let posts: PostMetadata[] = [];
 let error: string | null = null;
