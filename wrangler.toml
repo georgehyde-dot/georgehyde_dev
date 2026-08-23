@@ -27,3 +27,7 @@ id = "63647b278c2345e6a6f252cef09ef8ee"
 [[kv_namespaces]]
 binding = "SESSION"
 id = "55890dbab69144b4bfe60543c5f3ddbb"
+
+[observability.logs]
+enabled = true
+invocation_logs = true
