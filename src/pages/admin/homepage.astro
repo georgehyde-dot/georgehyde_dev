@@ -1,0 +1,114 @@
+---
+/**
+ * Admin forms for the two independent homepage state authorities.
+ *
+ * @decision DEC-SR-005A
+ * @title Present selection and project as separate server-owned forms
+ * @status accepted
+ * @rationale Each form submits only fields owned by one W-SR-1 update helper,
+ *   preventing stale browser state from replacing the other record.
+ */
+
+export const prerender = false;
+
+import { env as cloudflareEnv } from "cloudflare:workers";
+import type { Env } from "../../lib/kv-store.ts";
+import {
+  bootstrapSiteContent,
+  listWords,
+  type HomepageState,
+  type WordEntry,
+} from "../../lib/site-content.ts";
+
+const env = cloudflareEnv as Env;
+let state: HomepageState | null = null;
+let words: WordEntry[] = [];
+let error: string | null = null;
+
+try {
+  const content = await bootstrapSiteContent(env);
+  state = content.state;
+  words = await listWords(env);
+} catch (caught) {
+  error = caught instanceof Error ? caught.message : "Failed to load homepage settings.";
+}
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Homepage — Admin</title>
+    <style>
+      *, *::before, *::after { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; padding: 2.5rem 2rem; background: #0a0a0a; color: #e5e5e5; font-family: Inter, system-ui, sans-serif; }
+      main { width: min(820px, 100%); margin: 0 auto; }
+      nav { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+      a { color: #a3a3a3; }
+      h1 { margin: 0 0 1.5rem; }
+      section { margin-bottom: 1.25rem; padding: 1.25rem; border: 1px solid #292929; border-radius: 10px; background: #121212; }
+      h2 { margin: 0 0 1rem; font-size: 1.1rem; }
+      form, .field { display: grid; gap: 1rem; }
+      .field { gap: .4rem; }
+      label { color: #a3a3a3; font-size: .8rem; font-weight: 600; }
+      input, textarea, select { width: 100%; border: 1px solid #333; border-radius: 6px; background: #0d0d0d; color: #e5e5e5; font: inherit; padding: .7rem .8rem; }
+      textarea { min-height: 9rem; resize: vertical; }
+      button { width: fit-content; border: 0; border-radius: 6px; background: #4ade80; color: #08120b; cursor: pointer; font: inherit; font-weight: 700; padding: .6rem 1rem; }
+      .error { color: #fca5a5; }
+      @media (max-width: 560px) { body { padding: 1.25rem 1rem; } section { padding: 1rem; } button { width: 100%; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <nav>
+        <a href="/admin">Admin</a>
+        <a href="/admin/words">Words</a>
+        <a href="/admin/posts">Posts</a>
+        <a href="/">Home</a>
+      </nav>
+      <h1>Homepage settings</h1>
+
+      {error || !state ? <p class="error">{error ?? "Homepage state is unavailable."}</p> : (
+        <>
+          <section>
+            <h2>Words I Like selection</h2>
+            <form method="POST" action="/admin/api/homepage">
+              <input type="hidden" name="_action" value="selection" />
+              <div class="field">
+                <label for="selectedWordId">Word shown on the homepage</label>
+                <select id="selectedWordId" name="selectedWordId">
+                  {words.map((word) => (
+                    <option value={word.id} selected={word.id === state.selection.selectedWordId}>
+                      {word.attribution} — {word.text.slice(0, 80)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button type="submit">Update selection</button>
+            </form>
+          </section>
+
+          <section>
+            <h2>Featured project</h2>
+            <form method="POST" action="/admin/api/homepage">
+              <input type="hidden" name="_action" value="project" />
+              <div class="field">
+                <label for="title">Title</label>
+                <input id="title" name="title" value={state.featuredProject.title} required />
+              </div>
+              <div class="field">
+                <label for="description">Description</label>
+                <textarea id="description" name="description" required>{state.featuredProject.description}</textarea>
+              </div>
+              <div class="field">
+                <label for="url">Project URL (HTTPS)</label>
+                <input id="url" name="url" type="url" inputmode="url" value={state.featuredProject.url} required />
+              </div>
+              <button type="submit">Update project</button>
+            </form>
+          </section>
+        </>
+      )}
+    </main>
+  </body>
+</html>

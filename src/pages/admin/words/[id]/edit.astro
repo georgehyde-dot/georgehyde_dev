@@ -1,0 +1,87 @@
+---
+/**
+ * Server-rendered immutable-id Word editing form.
+ *
+ * @decision DEC-SR-004
+ * @title Preserve immutable Word ids and multiline content
+ * @status accepted
+ * @rationale The route id identifies the stored Word while the server API
+ *   revalidates editable plain-text fields before persistence.
+ */
+export const prerender = false;
+
+import { env as cloudflareEnv } from "cloudflare:workers";
+import type { Env } from "../../../../lib/kv-store.ts";
+import {
+  bootstrapSiteContent,
+  getWord,
+  type WordEntry,
+} from "../../../../lib/site-content.ts";
+
+const env = cloudflareEnv as Env;
+const { id } = Astro.params;
+let word: WordEntry | null = null;
+
+try {
+  await bootstrapSiteContent(env);
+  word = await getWord(env, id);
+} catch {
+  return Astro.redirect("/admin/words", 303);
+}
+
+if (!word) return Astro.redirect("/admin/words", 303);
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Edit Word — Admin</title>
+    <style>
+      *, *::before, *::after { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; padding: 2.5rem 2rem; background: #0a0a0a; color: #e5e5e5; font-family: Inter, system-ui, sans-serif; }
+      main { width: min(760px, 100%); margin: 0 auto; }
+      a { color: #a3a3a3; }
+      h1 { margin: 1.5rem 0; }
+      form, .field { display: grid; gap: 1rem; }
+      .field { gap: .4rem; }
+      label { color: #a3a3a3; font-size: .8rem; font-weight: 600; }
+      input, textarea { width: 100%; border: 1px solid #333; border-radius: 6px; background: #121212; color: #e5e5e5; font: inherit; padding: .7rem .8rem; }
+      input[readonly] { color: #737373; }
+      textarea { min-height: 15rem; resize: vertical; white-space: pre-wrap; }
+      .actions { display: flex; gap: .75rem; flex-wrap: wrap; }
+      button, .cancel { border: 1px solid #333; border-radius: 6px; cursor: pointer; font: inherit; padding: .6rem 1rem; text-decoration: none; }
+      button { background: #4ade80; border-color: #4ade80; color: #08120b; font-weight: 700; }
+      .cancel { color: #a3a3a3; }
+      @media (max-width: 560px) { body { padding: 1.25rem 1rem; } .actions > * { flex: 1 1 100%; text-align: center; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a href="/admin/words">← Words</a>
+      <h1>Edit Word</h1>
+      <form method="POST" action={`/admin/api/words/${word.id}`}>
+        <div class="field">
+          <label for="id">ID</label>
+          <input id="id" value={word.id} readonly aria-readonly="true" />
+        </div>
+        <div class="field">
+          <label for="text">Quote or poem</label>
+          <textarea id="text" name="text" required>{word.text}</textarea>
+        </div>
+        <div class="field">
+          <label for="attribution">Attribution</label>
+          <input id="attribution" name="attribution" value={word.attribution} required />
+        </div>
+        <div class="field">
+          <label for="source">Source URL (optional, HTTPS)</label>
+          <input id="source" name="source" type="url" inputmode="url" value={word.source ?? ""} />
+        </div>
+        <div class="actions">
+          <button type="submit">Save Word</button>
+          <a class="cancel" href="/admin/words">Cancel</a>
+        </div>
+      </form>
+    </main>
+  </body>
+</html>

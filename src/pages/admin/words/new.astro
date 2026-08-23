@@ -1,0 +1,67 @@
+---
+/**
+ * Plain-text Word creation form; the server API owns validation and writes.
+ *
+ * @decision DEC-SR-004
+ * @title Keep Words as multiline plain text
+ * @status accepted
+ * @rationale A textarea preserves authored line breaks while the canonical
+ *   server validator remains the only input authority.
+ */
+export const prerender = false;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>New Word — Admin</title>
+    <style>
+      *, *::before, *::after { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; padding: 2.5rem 2rem; background: #0a0a0a; color: #e5e5e5; font-family: Inter, system-ui, sans-serif; }
+      main { width: min(760px, 100%); margin: 0 auto; }
+      a { color: #a3a3a3; }
+      h1 { margin: 1.5rem 0; }
+      form, .field { display: grid; gap: 1rem; }
+      .field { gap: .4rem; }
+      label { color: #a3a3a3; font-size: .8rem; font-weight: 600; }
+      input, textarea { width: 100%; border: 1px solid #333; border-radius: 6px; background: #121212; color: #e5e5e5; font: inherit; padding: .7rem .8rem; }
+      textarea { min-height: 15rem; resize: vertical; white-space: pre-wrap; }
+      .actions { display: flex; gap: .75rem; flex-wrap: wrap; }
+      button, .cancel { border: 1px solid #333; border-radius: 6px; cursor: pointer; font: inherit; padding: .6rem 1rem; text-decoration: none; }
+      button { background: #4ade80; border-color: #4ade80; color: #08120b; font-weight: 700; }
+      .cancel { color: #a3a3a3; }
+      .hint { color: #666; font-size: .8rem; }
+      @media (max-width: 560px) { body { padding: 1.25rem 1rem; } .actions > * { flex: 1 1 100%; text-align: center; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a href="/admin/words">← Words</a>
+      <h1>New Word</h1>
+      <form method="POST" action="/admin/api/words">
+        <div class="field">
+          <label for="id">ID</label>
+          <input id="id" name="id" required autocomplete="off" placeholder="url-safe-id" />
+          <span class="hint">Lowercase letters, numbers, and single hyphens.</span>
+        </div>
+        <div class="field">
+          <label for="text">Quote or poem</label>
+          <textarea id="text" name="text" required></textarea>
+        </div>
+        <div class="field">
+          <label for="attribution">Attribution</label>
+          <input id="attribution" name="attribution" required />
+        </div>
+        <div class="field">
+          <label for="source">Source URL (optional, HTTPS)</label>
+          <input id="source" name="source" type="url" inputmode="url" />
+        </div>
+        <div class="actions">
+          <button type="submit">Create Word</button>
+          <a class="cancel" href="/admin/words">Cancel</a>
+        </div>
+      </form>
+    </main>
+  </body>
+</html>
