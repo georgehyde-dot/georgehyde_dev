@@ -17,7 +17,7 @@ import {
 } from "../../../lib/site-content.ts";
 import {
   validateFeaturedProject,
-  validateWordId,
+  validateHomepageSelectionSlots,
 } from "../../../lib/site-validation.ts";
 import type { Env } from "../../../lib/kv-store.ts";
 import {
@@ -59,13 +59,15 @@ export async function POST(context: APIContext): Promise<Response> {
 
   const action = formData.get("_action");
   if (action === "selection") {
-    const selectedWordId = validateWordId(formData.get("selectedWordId"));
-    if (!selectedWordId.ok) {
-      return new Response(selectedWordId.error, { status: 400 });
+    const selectedWordIds = validateHomepageSelectionSlots(
+      formData.getAll("selectedWordIds")
+    );
+    if (!selectedWordIds.ok) {
+      return new Response(selectedWordIds.error, { status: 400 });
     }
     try {
       await bootstrapSiteContent(env);
-      await updateHomepageSelection(env, selectedWordId.value);
+      await updateHomepageSelection(env, selectedWordIds.value);
     } catch (error) {
       return siteContentErrorResponse(error);
     }

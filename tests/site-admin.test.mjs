@@ -98,7 +98,7 @@ function createEnv(overrides = {}) {
 
 function formRequest(entries, { origin = "https://georgehyde.dev" } = {}) {
   const form = new FormData();
-  for (const [key, value] of entries) form.set(key, value);
+  for (const [key, value] of entries) form.append(key, value);
   return new Request("https://georgehyde.dev/admin/api/content", {
     method: "POST",
     headers: origin === null ? undefined : { Origin: origin },
@@ -152,6 +152,16 @@ const poemFields = [
   ["source", "https://example.com/poem"],
 ];
 
+function selectionFields(ids) {
+  const slots = ids.length <= 5
+    ? [...ids, ...Array.from({ length: 5 - ids.length }, () => "")]
+    : ids;
+  return [
+    ["_action", "selection"],
+    ...slots.map((id) => ["selectedWordIds", id]),
+  ];
+}
+
 test("exact local mode completes real Words CRUD, selection, and independent project sequence", async () => {
   const env = localEnv();
 
@@ -181,14 +191,11 @@ test("exact local mode completes real Words CRUD, selection, and independent pro
   const selected = await mutateHomepageRoute(apiContext({
     env,
     userId: null,
-    request: formRequest([
-      ["_action", "selection"],
-      ["selectedWordId", "a-small-poem"],
-    ], { origin: null }),
+    request: formRequest(selectionFields(["a-small-poem", TOLKIEN_WORD.id]), { origin: null }),
   }));
   assert.equal(selected.status, 303);
   assert.equal(selected.headers.get("Location"), "/admin/words");
-  assert.equal((await getHomepageSelection(env)).selectedWordId, "a-small-poem");
+  assert.deepEqual((await getHomepageSelection(env)).selectedWordIds, ["a-small-poem", TOLKIEN_WORD.id]);
 
   const projectBefore = await getFeaturedProject(env);
   const projectUpdated = await mutateHomepageRoute(apiContext({
@@ -203,7 +210,7 @@ test("exact local mode completes real Words CRUD, selection, and independent pro
   }));
   assert.equal(projectUpdated.status, 303);
   assert.equal(projectUpdated.headers.get("Location"), "/admin/homepage");
-  assert.equal((await getHomepageSelection(env)).selectedWordId, "a-small-poem");
+  assert.deepEqual((await getHomepageSelection(env)).selectedWordIds, ["a-small-poem", TOLKIEN_WORD.id]);
   assert.notDeepEqual(await getFeaturedProject(env), projectBefore);
 
   const beforeRejectedDelete = snapshot(env);
@@ -219,10 +226,7 @@ test("exact local mode completes real Words CRUD, selection, and independent pro
   const reselected = await mutateHomepageRoute(apiContext({
     env,
     userId: null,
-    request: formRequest([
-      ["_action", "selection"],
-      ["selectedWordId", TOLKIEN_WORD.id],
-    ], { origin: null }),
+    request: formRequest(selectionFields([TOLKIEN_WORD.id]), { origin: null }),
   }));
   assert.equal(reselected.status, 303);
 
@@ -236,6 +240,62 @@ test("exact local mode completes real Words CRUD, selection, and independent pro
   assert.equal(deleted.headers.get("Location"), "/admin/words");
   assert.equal(await getWord(env, "a-small-poem"), null);
   assert.deepEqual((await listWords(env)).map(({ id }) => id), [TOLKIEN_WORD.id]);
+});
+
+test("ordered five-slot handler persists one to five selections and rejects forged state", async () => {
+  const env = localEnv();
+  await bootstrapSiteContent(env);
+  for (let index = 1; index <= 5; index += 1) {
+    await createWord(env, {
+      id: `slot-word-${index}`,
+      text: `Slot ${index}`,
+      attribution: "Tester",
+      source: null,
+    }, `2026-08-23T0${index}:00:00.000Z`);
+  }
+
+  const one = await mutateHomepageRoute(apiContext({
+    env,
+    userId: null,
+    request: formRequest(selectionFields(["slot-word-3"]), { origin: null }),
+  }));
+  assert.equal(one.status, 303);
+  assert.deepEqual((await getHomepageSelection(env)).selectedWordIds, ["slot-word-3"]);
+
+  const orderedFive = ["slot-word-5", TOLKIEN_WORD.id, "slot-word-2", "slot-word-4", "slot-word-1"];
+  const five = await mutateHomepageRoute(apiContext({
+    env,
+    userId: null,
+    request: formRequest(selectionFields(orderedFive), { origin: null }),
+  }));
+  assert.equal(five.status, 303);
+  assert.equal(five.headers.get("Location"), "/admin/words");
+  assert.deepEqual((await getHomepageSelection(env)).selectedWordIds, orderedFive);
+
+  for (const [ids, expectedStatus] of [
+    [[], 400],
+    [["slot-word-1", "slot-word-1"], 400],
+    [["slot-word-1", "slot-word-2", "slot-word-3", "slot-word-4", "slot-word-5", TOLKIEN_WORD.id], 400],
+    [["missing-word"], 404],
+  ]) {
+    const before = snapshot(env);
+    const response = await mutateHomepageRoute(apiContext({
+      env,
+      userId: null,
+      request: formRequest(selectionFields(ids), { origin: null }),
+    }));
+    assert.equal(response.status, expectedStatus);
+    assert.equal(snapshot(env), before);
+  }
+
+  const beforeMissingSlots = snapshot(env);
+  const missingSlots = await mutateHomepageRoute(apiContext({
+    env,
+    userId: null,
+    request: formRequest([["_action", "selection"]], { origin: null }),
+  }));
+  assert.equal(missingSlots.status, 400);
+  assert.equal(snapshot(env), beforeMissingSlots);
 });
 
 test("actual homepage handlers preserve concurrent independent updates", async () => {
@@ -263,10 +323,7 @@ test("actual homepage handlers preserve concurrent independent updates", async (
     mutateHomepageRoute(apiContext({
       env,
       userId: null,
-      request: formRequest([
-        ["_action", "selection"],
-        ["selectedWordId", "concurrent-word"],
-      ], { origin: null }),
+      request: formRequest(selectionFields(["concurrent-word", TOLKIEN_WORD.id]), { origin: null }),
     })),
     mutateHomepageRoute(apiContext({
       env,
@@ -285,7 +342,7 @@ test("actual homepage handlers preserve concurrent independent updates", async (
     HOMEPAGE_SELECTION_KEY,
   ].sort());
   const state = await getHomepageState(env);
-  assert.equal(state.selection.selectedWordId, "concurrent-word");
+  assert.deepEqual(state.selection.selectedWordIds, ["concurrent-word", TOLKIEN_WORD.id]);
   assert.equal(state.featuredProject.title, "Concurrent project");
 });
 
@@ -354,7 +411,7 @@ test("validation, conflicts, missing records, and malformed forms never mutate c
     () => mutateHomepageRoute(apiContext({
       env: duplicateEnv,
       userId: null,
-      request: formRequest([["_action", "selection"], ["selectedWordId", "missing-word"]], { origin: null }),
+      request: formRequest(selectionFields(["missing-word"]), { origin: null }),
     })),
   ]) {
     const before = snapshot(duplicateEnv);
@@ -415,7 +472,7 @@ test("every mutation class enforces production owner and Origin before state cha
     (env, userId, origin) => mutateHomepageRoute(apiContext({
       env,
       userId,
-      request: formRequest([["_action", "selection"], ["selectedWordId", "existing-word"]], { origin }),
+      request: formRequest(selectionFields(["existing-word"]), { origin }),
     })),
     (env, userId, origin) => mutateHomepageRoute(apiContext({
       env,
@@ -524,4 +581,8 @@ test("admin source surfaces use canonical helpers, SSR forms, and clear navigati
   assert.match(sources["src/pages/admin/api/homepage.ts"], /updateHomepageSelection/);
   assert.match(sources["src/pages/admin/api/homepage.ts"], /updateFeaturedProject/);
   assert.doesNotMatch(sources["src/pages/admin/api/homepage.ts"], /getHomepageState/);
+  assert.match(sources["src/pages/admin/api/homepage.ts"], /getAll\("selectedWordIds"\)/);
+  assert.match(sources["src/pages/admin/homepage.astro"], /Array\.from\(\{ length: 5 \}/);
+  assert.match(sources["src/pages/admin/homepage.astro"], /name="selectedWordIds"/);
+  assert.match(sources["src/pages/admin/words/index.astro"], /Homepage position/);
 });

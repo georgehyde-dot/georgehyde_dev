@@ -3,10 +3,16 @@
  * Server-rendered Words collection management.
  *
  * @decision DEC-SR-005A
- * @title Selection forms call the independent homepage selection action
+ * @title Keep collection CRUD separate from homepage configuration
  * @status accepted
- * @rationale The page reads aggregate state for display but sends selection,
- *   update, and delete forms to their canonical server mutation helpers.
+ * @rationale The page reads aggregate state only to label selected positions;
+ *   updates and deletes still use canonical server mutation helpers.
+ *
+ * @decision DEC-SR-002B
+ * @title Display ordered selection membership without per-item replacement
+ * @status accepted
+ * @rationale The homepage settings form owns the complete ordered selection;
+ *   this collection page labels positions and retains canonical CRUD only.
  */
 
 export const prerender = false;
@@ -21,12 +27,12 @@ import {
 
 const env = cloudflareEnv as Env;
 let words: WordEntry[] = [];
-let selectedWordId = "";
+let selectedWordIds: string[] = [];
 let error: string | null = null;
 
 try {
   const content = await bootstrapSiteContent(env);
-  selectedWordId = content.state.selection.selectedWordId;
+  selectedWordIds = content.state.selection.selectedWordIds;
   words = await listWords(env);
 } catch (caught) {
   error = caught instanceof Error ? caught.message : "Failed to load Words.";
@@ -70,26 +76,26 @@ try {
       </nav>
       <div class="top">
         <h1>Words I Like</h1>
-        <a class="btn primary" href="/admin/words/new">New Word</a>
+        <div class="actions">
+          <a class="btn" href="/admin/homepage#words-selection">Manage homepage order</a>
+          <a class="btn primary" href="/admin/words/new">New Word</a>
+        </div>
       </div>
 
       {error ? <p class="error">{error}</p> : (
         <div class="list">
           {words.map((word) => (
             <article>
-              {word.id === selectedWordId && <div class="selected">Selected for homepage</div>}
+              {selectedWordIds.includes(word.id) && (
+                <div class="selected">
+                  Homepage position {selectedWordIds.indexOf(word.id) + 1}
+                </div>
+              )}
               <blockquote>{word.text}</blockquote>
               <div class="attribution">— {word.attribution}</div>
               {word.source && <a class="source" href={word.source} target="_blank" rel="noopener noreferrer">Source</a>}
               <div class="actions">
                 <a class="btn" href={`/admin/words/${word.id}/edit`}>Edit</a>
-                {word.id !== selectedWordId && (
-                  <form method="POST" action="/admin/api/homepage">
-                    <input type="hidden" name="_action" value="selection" />
-                    <input type="hidden" name="selectedWordId" value={word.id} />
-                    <button type="submit">Show on homepage</button>
-                  </form>
-                )}
                 <form method="POST" action={`/admin/api/words/${word.id}`}>
                   <input type="hidden" name="_method" value="delete" />
                   <button type="submit" class="danger">Delete</button>

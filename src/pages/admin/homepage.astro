@@ -7,6 +7,12 @@
  * @status accepted
  * @rationale Each form submits only fields owned by one W-SR-1 update helper,
  *   preventing stale browser state from replacing the other record.
+ *
+ * @decision DEC-SR-002B
+ * @title Use five explicit ordered homepage Word slots
+ * @status accepted
+ * @rationale Fixed server-rendered slots make order and the five-item bound
+ *   visible. The API rejects gaps, duplicates, empty, and forged overflow.
  */
 
 export const prerender = false;
@@ -32,6 +38,9 @@ try {
 } catch (caught) {
   error = caught instanceof Error ? caught.message : "Failed to load homepage settings.";
 }
+const selectionSlots = Array.from({ length: 5 },
+  (_, index) => state?.selection.selectedWordIds[index] ?? ""
+);
 ---
 
 <html lang="en">
@@ -70,21 +79,30 @@ try {
 
       {error || !state ? <p class="error">{error ?? "Homepage state is unavailable."}</p> : (
         <>
-          <section>
-            <h2>Words I Like selection</h2>
+          <section id="words-selection">
+            <h2>Words I Like order</h2>
             <form method="POST" action="/admin/api/homepage">
               <input type="hidden" name="_action" value="selection" />
-              <div class="field">
-                <label for="selectedWordId">Word shown on the homepage</label>
-                <select id="selectedWordId" name="selectedWordId">
-                  {words.map((word) => (
-                    <option value={word.id} selected={word.id === state.selection.selectedWordId}>
-                      {word.attribution} — {word.text.slice(0, 80)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <button type="submit">Update selection</button>
+              {selectionSlots.map((selectedWordId, index) => (
+                <div class="field">
+                  <label for={`selectedWordIds-${index}`}>
+                    Position {index + 1}{index === 0 ? " (required)" : ""}
+                  </label>
+                  <select
+                    id={`selectedWordIds-${index}`}
+                    name="selectedWordIds"
+                    required={index === 0}
+                  >
+                    <option value="">{index === 0 ? "Choose a Word" : "Not used"}</option>
+                    {words.map((word) => (
+                      <option value={word.id} selected={word.id === selectedWordId}>
+                        {word.attribution} — {word.text.slice(0, 80)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+              <button type="submit">Update Words order</button>
             </form>
           </section>
 

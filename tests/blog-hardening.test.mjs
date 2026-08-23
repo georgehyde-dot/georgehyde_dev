@@ -1117,14 +1117,13 @@ test("admin write handlers and public read helper exercise the production blog s
 });
 
 test("config and source invariants stay aligned with the hardening contract", async () => {
-  const [packageJson, wrangler, staticHeaders, astroConfig, home, progress, adminHome, detail, editor, newPost, createRoute, updateRoute] =
+  const [packageJson, wrangler, staticHeaders, astroConfig, home, adminHome, detail, editor, newPost, createRoute, updateRoute] =
     await Promise.all([
       readFile(projectFile("package.json"), "utf8"),
       readFile(projectFile("wrangler.toml"), "utf8"),
       readFile(projectFile("public/_headers"), "utf8"),
       readFile(projectFile("astro.config.mjs"), "utf8"),
       readFile(projectFile("src/pages/index.astro"), "utf8"),
-      readFile(projectFile("src/pages/progress.astro"), "utf8"),
       readFile(projectFile("src/pages/admin/index.astro"), "utf8"),
       readFile(projectFile("src/pages/blog/[slug].astro"), "utf8"),
       readFile(projectFile("src/components/PostEditor.astro"), "utf8"),
@@ -1157,11 +1156,9 @@ test("config and source invariants stay aligned with the hardening contract", as
   assert.doesNotMatch(assetsSection, /^routes\s*=/m);
   assert.match(astroConfig, /adapter: cloudflare\(\)/);
 
-  assert.match(home, /export const prerender = true/);
+  assert.match(home, /export const prerender = false/);
   assert.match(home, /href="\/blog"/);
-  assert.match(progress, /export const prerender = true/);
-  assert.doesNotMatch(progress, /console\.log/);
-  assert.doesNotMatch(home + progress, /LinkedIn/i);
+  assert.doesNotMatch(home, /LinkedIn/i);
 
   assert.doesNotMatch(detail, /set:html=\{post\.body\}/);
   assert.match(detail, /safeBody/);

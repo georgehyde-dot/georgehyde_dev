@@ -7,6 +7,13 @@
  * @rationale Words need line breaks, not a second rich-text policy. Keeping all
  *   Word identifiers, text, attribution, source, project, and stored-record
  *   validation here prevents admin forms and public readers from drifting.
+ *
+ * @decision DEC-SR-002B
+ * @title Validate one ordered set of one to five homepage Words
+ * @status accepted
+ * @rationale The selection singleton stores one strict ordered id list. Slot
+ *   parsing is explicit, rejects gaps, duplicates, and overflow, and never
+ *   silently truncates or deduplicates forged state.
  */
 
 export type ValidationResult<T> =
@@ -21,6 +28,8 @@ export const MAX_SOURCE_URL_LENGTH = 2_048;
 export const MAX_PROJECT_TITLE_LENGTH = 160;
 export const MAX_PROJECT_DESCRIPTION_LENGTH = 4_000;
 export const MAX_PROJECT_URL_LENGTH = 2_048;
+export const MAX_HOMEPAGE_WORDS = 5;
+export const HOMEPAGE_WORD_SLOT_COUNT = 5;
 
 export interface WordInput {
   id: string;
@@ -41,6 +50,11 @@ export interface FeaturedProject {
 }
 
 export interface HomepageSelection {
+  selectedWordIds: string[];
+  updatedAt: string;
+}
+
+export interface LegacyHomepageSelection {
   selectedWordId: string;
   updatedAt: string;
 }
@@ -153,12 +167,12 @@ export function validateFeaturedProject(
 export function validateHomepageSelection(
   input: unknown
 ): ValidationResult<HomepageSelection> {
-  if (!isRecord(input)) {
+  if (!isRecord(input) || "selectedWordId" in input) {
     return { ok: false, error: "Invalid stored homepage selection" };
   }
-  const selectedWordId = validateWordId(input.selectedWordId);
-  if (!selectedWordId.ok) {
-    return { ok: false, error: "Stored homepage selection has an invalid selected Word" };
+  const selectedWordIds = validateSelectedWordIds(input.selectedWordIds);
+  if (!selectedWordIds.ok) {
+    return { ok: false, error: `Stored homepage selection is invalid: ${selectedWordIds.error}` };
   }
   if (!isCanonicalIsoTimestamp(input.updatedAt)) {
     return { ok: false, error: "Stored homepage selection has an invalid updatedAt" };
@@ -166,9 +180,80 @@ export function validateHomepageSelection(
   return {
     ok: true,
     value: {
-      selectedWordId: selectedWordId.value,
+      selectedWordIds: selectedWordIds.value,
       updatedAt: input.updatedAt,
     },
+  };
+}
+
+/** Strict canonical validation for the ordered persisted id list. */
+export function validateSelectedWordIds(
+  input: unknown
+): ValidationResult<string[]> {
+  if (!Array.isArray(input)) {
+    return { ok: false, error: "Selected Words must be a list" };
+  }
+  if (input.length === 0) {
+    return { ok: false, error: "Select at least one Word" };
+  }
+  if (input.length > MAX_HOMEPAGE_WORDS) {
+    return { ok: false, error: "Select no more than five Words" };
+  }
+
+  const selectedWordIds: string[] = [];
+  for (const candidate of input) {
+    const wordId = validateWordId(candidate);
+    if (!wordId.ok) {
+      return { ok: false, error: "Selected Words contain an invalid Word id" };
+    }
+    if (selectedWordIds.includes(wordId.value)) {
+      return { ok: false, error: "Selected Words must be unique" };
+    }
+    selectedWordIds.push(wordId.value);
+  }
+  return { ok: true, value: selectedWordIds };
+}
+
+/** Parses exactly five ordered admin slots without filtering non-trailing gaps. */
+export function validateHomepageSelectionSlots(
+  input: unknown
+): ValidationResult<string[]> {
+  if (!Array.isArray(input) || input.length !== HOMEPAGE_WORD_SLOT_COUNT) {
+    return { ok: false, error: "Homepage selection requires exactly five slots" };
+  }
+  if (input.some((value) => typeof value !== "string")) {
+    return { ok: false, error: "Homepage Word slots are invalid" };
+  }
+
+  const firstUnused = input.indexOf("");
+  if (
+    firstUnused !== -1 &&
+    input.slice(firstUnused).some((value) => value !== "")
+  ) {
+    return { ok: false, error: "Homepage Word slots must be contiguous" };
+  }
+  return validateSelectedWordIds(
+    firstUnused === -1 ? input : input.slice(0, firstUnused)
+  );
+}
+
+/** Legacy v1 shape accepted only by the marker-controlled migration. */
+export function validateLegacyHomepageSelection(
+  input: unknown
+): ValidationResult<LegacyHomepageSelection> {
+  if (!isRecord(input) || "selectedWordIds" in input) {
+    return { ok: false, error: "Invalid legacy homepage selection" };
+  }
+  const selectedWordId = validateWordId(input.selectedWordId);
+  if (!selectedWordId.ok) {
+    return { ok: false, error: "Legacy homepage selection has an invalid selected Word" };
+  }
+  if (!isCanonicalIsoTimestamp(input.updatedAt)) {
+    return { ok: false, error: "Legacy homepage selection has an invalid updatedAt" };
+  }
+  return {
+    ok: true,
+    value: { selectedWordId: selectedWordId.value, updatedAt: input.updatedAt },
   };
 }
 

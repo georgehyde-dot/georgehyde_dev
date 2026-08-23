@@ -26,6 +26,13 @@
  * @status accepted
  * @rationale A selected Word cannot be deleted. Selection and project updates
  *   each write only their own key, so concurrent requests preserve both results.
+ *
+ * @decision DEC-SR-003B
+ * @title Upgrade the selection authority in place and mark schema v2 last
+ * @status accepted
+ * @rationale The existing selection key remains canonical. Marker-controlled
+ *   migration accepts the legacy scalar only before v2, preserves its order as
+ *   a one-item list, validates referents, and writes the v2 marker last.
  */
 
 import sanitizeHtml from "sanitize-html";
@@ -38,6 +45,8 @@ import {
 import {
   validateFeaturedProject,
   validateHomepageSelection,
+  validateLegacyHomepageSelection,
+  validateSelectedWordIds,
   validateStoredFeaturedProject,
   validateStoredWord,
   validateWordId,
@@ -81,7 +90,7 @@ export const INITIAL_FEATURED_PROJECT: FeaturedProject = Object.freeze({
 });
 
 const INITIAL_HOMEPAGE_SELECTION: HomepageSelection = Object.freeze({
-  selectedWordId: TOLKIEN_WORD.id,
+  selectedWordIds: [TOLKIEN_WORD.id],
   updatedAt: SEED_TIMESTAMP,
 });
 
@@ -97,7 +106,7 @@ export interface HomepageState {
 
 export interface HomepageContent {
   state: HomepageState;
-  selectedWord: WordEntry;
+  selectedWords: WordEntry[];
 }
 
 export interface LatestPostPreview {
@@ -213,7 +222,7 @@ export async function deleteWord(env: Env, id: unknown): Promise<void> {
   if (!selection && (await env.BLOG_POSTS.get(MIGRATION_KEY)) !== null) {
     throw new SiteContentError("integrity", "Homepage selection is missing");
   }
-  if (selection?.selectedWordId === wordId) {
+  if (selection?.selectedWordIds.includes(wordId)) {
     throw new SiteContentError(
       "selected_word",
       "Select another Word before deleting this one"
@@ -269,27 +278,35 @@ export async function getHomepageState(env: Env): Promise<HomepageState> {
 /** Returns only a referentially complete homepage; dangling state is an error. */
 export async function getHomepageContent(env: Env): Promise<HomepageContent> {
   const state = await getHomepageState(env);
-  const selectedWord = await getWord(env, state.selection.selectedWordId);
-  if (!selectedWord) {
-    throw new SiteContentError(
-      "integrity",
-      `Selected Word is missing: ${state.selection.selectedWordId}`
-    );
-  }
-  return { state, selectedWord };
+  const selectedWords = await Promise.all(
+    state.selection.selectedWordIds.map(async (wordId) => {
+      const word = await getWord(env, wordId);
+      if (!word) {
+        throw new SiteContentError(
+          "integrity",
+          `Selected Word is missing: ${wordId}`
+        );
+      }
+      return word;
+    })
+  );
+  return { state, selectedWords };
 }
 
 export async function updateHomepageSelection(
   env: Env,
-  selectedWordId: unknown,
+  selectedWordIds: unknown,
   updatedAt: string = new Date().toISOString()
 ): Promise<HomepageSelection> {
-  const wordId = requireWordId(selectedWordId);
-  if (!(await getWord(env, wordId))) {
-    throw new SiteContentError("not_found", `Word not found: ${wordId}`);
+  const selected = validateSelectedWordIds(selectedWordIds);
+  if (!selected.ok) throw validationError(selected.error);
+  for (const wordId of selected.value) {
+    if (!(await getWord(env, wordId))) {
+      throw new SiteContentError("not_found", `Word not found: ${wordId}`);
+    }
   }
   return writeHomepageSelection(env, {
-    selectedWordId: wordId,
+    selectedWordIds: selected.value,
     updatedAt,
   });
 }
@@ -312,22 +329,81 @@ export async function updateFeaturedProject(
  * Each present key is preserved, so a retry resumes without reverting admin data.
  */
 export async function bootstrapSiteContent(env: Env): Promise<HomepageContent> {
-  const marker = await env.BLOG_POSTS.get(MIGRATION_KEY);
-  if (marker !== null) return getHomepageContent(env);
+  const migrationVersion = await getMigrationVersion(env);
+  if (migrationVersion === 2) return getHomepageContent(env);
+
+  if (migrationVersion === 1) {
+    await upgradeLegacyHomepageSelection(env);
+    const content = await getHomepageContent(env);
+    await writeMigrationMarker(env);
+    return content;
+  }
 
   if ((await env.BLOG_POSTS.get(wordKey(TOLKIEN_WORD.id))) === null) {
     await putWord(env, TOLKIEN_WORD);
   }
   if ((await env.BLOG_POSTS.get(HOMEPAGE_SELECTION_KEY)) === null) {
     await writeHomepageSelection(env, INITIAL_HOMEPAGE_SELECTION);
+  } else {
+    await upgradeLegacyHomepageSelection(env);
   }
   if ((await env.BLOG_POSTS.get(FEATURED_PROJECT_KEY)) === null) {
     await writeFeaturedProject(env, INITIAL_STORED_FEATURED_PROJECT);
   }
 
   const content = await getHomepageContent(env);
-  await env.BLOG_POSTS.put(MIGRATION_KEY, JSON.stringify({ version: 1 }));
+  await writeMigrationMarker(env);
   return content;
+}
+
+async function getMigrationVersion(env: Env): Promise<0 | 1 | 2> {
+  const raw = await env.BLOG_POSTS.get(MIGRATION_KEY);
+  if (raw === null) return 0;
+  try {
+    const marker = JSON.parse(raw) as unknown;
+    if (
+      typeof marker === "object" &&
+      marker !== null &&
+      !Array.isArray(marker) &&
+      ((marker as { version?: unknown }).version === 1 ||
+        (marker as { version?: unknown }).version === 2)
+    ) {
+      return (marker as { version: 1 | 2 }).version;
+    }
+  } catch {
+    // Fall through to the single integrity failure below.
+  }
+  throw new SiteContentError("integrity", "Homepage migration marker is invalid");
+}
+
+async function upgradeLegacyHomepageSelection(env: Env): Promise<void> {
+  const stored = await env.BLOG_POSTS.get(HOMEPAGE_SELECTION_KEY, {
+    type: "json",
+  });
+  if (stored === null) {
+    throw new SiteContentError("integrity", "Homepage selection is missing");
+  }
+
+  const current = validateHomepageSelection(stored);
+  if (current.ok) return;
+  const legacy = validateLegacyHomepageSelection(stored);
+  if (!legacy.ok) {
+    throw new SiteContentError("integrity", current.error);
+  }
+  if (!(await getWord(env, legacy.value.selectedWordId))) {
+    throw new SiteContentError(
+      "integrity",
+      `Selected Word is missing: ${legacy.value.selectedWordId}`
+    );
+  }
+  await writeHomepageSelection(env, {
+    selectedWordIds: [legacy.value.selectedWordId],
+    updatedAt: legacy.value.updatedAt,
+  });
+}
+
+async function writeMigrationMarker(env: Env): Promise<void> {
+  await env.BLOG_POSTS.put(MIGRATION_KEY, JSON.stringify({ version: 2 }));
 }
 
 /**

@@ -1,0 +1,179 @@
+---
+/**
+ * Complete public Words I Like collection.
+ *
+ * @decision DEC-SR-001
+ * @title Read the Words collection directly during SSR
+ * @status accepted
+ * @rationale The canonical paginated helper supplies deterministic ordering;
+ *   Astro escapes plain text and preserves line breaks without client state.
+ */
+
+export const prerender = false;
+
+import { env as cloudflareEnv } from "cloudflare:workers";
+import type { Env } from "../../lib/kv-store.ts";
+import {
+  bootstrapSiteContent,
+  listWords,
+} from "../../lib/site-content.ts";
+
+const env = cloudflareEnv as Env;
+await bootstrapSiteContent(env);
+const words = await listWords(env);
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="description" content="Words I Like — George Hyde" />
+    <title>Words I Like — George Hyde</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <main class="shell">
+      <nav aria-label="Public navigation">
+        <a href="/">Home</a>
+        <a href="/blog">Blog</a>
+      </nav>
+
+      <header>
+        <h1>Words I Like</h1>
+        <p>Quotes and poems I return to.</p>
+      </header>
+
+      {
+        words.length === 0 ? (
+          <p class="empty">No collected words yet.</p>
+        ) : (
+          <ol class="collection">
+            {words.map((word) => (
+              <li>
+                <article>
+                  <blockquote>{word.text}</blockquote>
+                  <footer>
+                    <span>— {word.attribution}</span>
+                    {word.source && (
+                      <a
+                        href={word.source}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >Source <span aria-hidden="true">↗</span></a>
+                    )}
+                  </footer>
+                </article>
+              </li>
+            ))}
+          </ol>
+        )
+      }
+    </main>
+
+    <style>
+      *, *::before, *::after { box-sizing: border-box; }
+
+      :root {
+        color-scheme: dark;
+        font-family: "Inter", system-ui, sans-serif;
+        background: #09090b;
+        color: #e4e4e7;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 85% 0%, rgba(74, 222, 128, 0.07), transparent 30rem),
+          #09090b;
+      }
+
+      .shell {
+        width: min(760px, 100%);
+        margin: 0 auto;
+        padding: 4rem 2rem;
+      }
+
+      nav {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 3rem;
+      }
+
+      a {
+        color: #a1a1aa;
+        font-size: 0.875rem;
+        font-weight: 500;
+      }
+
+      a:hover, a:focus-visible { color: #4ade80; }
+
+      header { margin-bottom: 2.5rem; }
+
+      h1 {
+        margin: 0 0 0.5rem;
+        color: #fafafa;
+        font-size: clamp(2.2rem, 8vw, 3.7rem);
+        line-height: 1;
+        letter-spacing: -0.045em;
+      }
+
+      header p, .empty { margin: 0; color: #8a8a93; }
+
+      .collection {
+        display: grid;
+        gap: 1rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      article {
+        min-width: 0;
+        border: 1px solid #27272a;
+        border-radius: 14px;
+        background: rgba(18, 18, 20, 0.88);
+        padding: 1.5rem;
+      }
+
+      blockquote {
+        margin: 0 0 1rem;
+        color: #d4d4d8;
+        font-size: clamp(1rem, 3vw, 1.15rem);
+        line-height: 1.75;
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+      }
+
+      footer {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1rem;
+        color: #85858e;
+        font-size: 0.875rem;
+        overflow-wrap: anywhere;
+      }
+
+      footer a { flex: 0 0 auto; }
+
+      @media (max-width: 560px) {
+        .shell { padding: 2rem 1rem; }
+        nav { margin-bottom: 2rem; }
+        article { padding: 1.15rem; }
+        footer {
+          align-items: flex-start;
+          flex-direction: column;
+          gap: 0.6rem;
+        }
+      }
+    </style>
+  </body>
+</html>
