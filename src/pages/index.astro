@@ -33,11 +33,10 @@ import {
 } from "../lib/site-content.ts";
 
 const env = cloudflareEnv as Env;
-const [{ state, selectedWords }, latestPost] = await Promise.all([
+const [{ selectedWords, selectedProjects }, latestPost] = await Promise.all([
   bootstrapSiteContent(env),
   getLatestPublishedPostPreview(env),
 ]);
-const featuredProject = state.featuredProject;
 ---
 
 <html lang="en">
@@ -92,69 +91,65 @@ const featuredProject = state.featuredProject;
           }
         </section>
 
-        <section class="card words-card" data-word-carousel>
+        <section class="card carousel-card" data-carousel data-carousel-label="Word">
           <div class="card-heading">
-            <p class="eyebrow">Words I Like</p>
-            <a class="collection-link" href="/words">View all</a>
+            <div><p class="eyebrow">Words I Like</p><a class="collection-link" href="/words">View all</a></div>
+            <div class="carousel-controls">
+              <button type="button" data-carousel-previous aria-label="Previous Word" disabled={selectedWords.length === 1}>←</button>
+              <span data-carousel-status aria-live="polite" aria-atomic="true">Word 1 of {selectedWords.length}</span>
+              <button type="button" data-carousel-next aria-label="Next Word" disabled={selectedWords.length === 1}>→</button>
+            </div>
           </div>
-          <div class="word-frame">
+          <div class="reading-viewport" data-carousel-viewport tabindex="0">
             {selectedWords.map((word, index) => (
-              <figure data-word-slide hidden={index !== 0}>
+              <figure data-carousel-slide hidden={index !== 0}>
+                <h2>{word.title}</h2>
                 <blockquote>{word.text}</blockquote>
                 <figcaption>— {word.attribution}</figcaption>
               </figure>
             ))}
           </div>
-          <div class="word-controls">
-            <button
-              type="button"
-              data-word-previous
-              aria-label="Previous Word"
-              disabled={selectedWords.length === 1}
-            >←</button>
-            <span data-word-status aria-live="polite" aria-atomic="true">
-              Word 1 of {selectedWords.length}
-            </span>
-            <button
-              type="button"
-              data-word-next
-              aria-label="Next Word"
-              disabled={selectedWords.length === 1}
-            >→</button>
-          </div>
         </section>
 
-        <section class="card featured">
-          <p class="eyebrow">Featured Project</p>
-          <a
-            class="card-link"
-            href={featuredProject.url}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <h2>{featuredProject.title}</h2>
-            <p class="body-copy">{featuredProject.description}</p>
-            <span class="action">View project <span aria-hidden="true">↗</span></span>
-          </a>
+        <section class="card carousel-card" data-carousel data-carousel-label="Project">
+          <div class="card-heading">
+            <div><p class="eyebrow">Featured Projects</p><a class="collection-link" href="/projects">View all</a></div>
+            <div class="carousel-controls">
+              <button type="button" data-carousel-previous aria-label="Previous Project" disabled={selectedProjects.length === 1}>←</button>
+              <span data-carousel-status aria-live="polite" aria-atomic="true">Project 1 of {selectedProjects.length}</span>
+              <button type="button" data-carousel-next aria-label="Next Project" disabled={selectedProjects.length === 1}>→</button>
+            </div>
+          </div>
+          <div class="reading-viewport" data-carousel-viewport tabindex="0">
+            {selectedProjects.map((project, index) => (
+              <article data-carousel-slide hidden={index !== 0}>
+                <h2>{project.title}</h2>
+                <p class="body-copy">{project.description}</p>
+                <a class="action" href={project.url} target="_blank" rel="noopener noreferrer">View project <span aria-hidden="true">↗</span></a>
+              </article>
+            ))}
+          </div>
         </section>
       </div>
     </main>
 
     <script is:inline>
-      const carousel = document.querySelector("[data-word-carousel]");
-      if (carousel) {
-        const slides = Array.from(carousel.querySelectorAll("[data-word-slide]"));
-        const previous = carousel.querySelector("[data-word-previous]");
-        const next = carousel.querySelector("[data-word-next]");
-        const status = carousel.querySelector("[data-word-status]");
-        if (slides.length > 0 && previous && next && status) {
+      document.querySelectorAll("[data-carousel]").forEach((carousel) => {
+        const slides = Array.from(carousel.querySelectorAll("[data-carousel-slide]"));
+        const viewport = carousel.querySelector("[data-carousel-viewport]");
+        const previous = carousel.querySelector("[data-carousel-previous]");
+        const next = carousel.querySelector("[data-carousel-next]");
+        const status = carousel.querySelector("[data-carousel-status]");
+        const label = carousel.dataset.carouselLabel;
+        if (slides.length > 0 && viewport && previous && next && status && label) {
           let visibleIndex = 0;
           const show = (nextIndex) => {
             visibleIndex = (nextIndex + slides.length) % slides.length;
             slides.forEach((slide, index) => {
               slide.hidden = index !== visibleIndex;
             });
-            status.textContent = `Word ${visibleIndex + 1} of ${slides.length}`;
+            viewport.scrollTop = 0;
+            status.textContent = `${label} ${visibleIndex + 1} of ${slides.length}`;
           };
           const single = slides.length === 1;
           previous.disabled = single;
@@ -163,7 +158,7 @@ const featuredProject = state.featuredProject;
           next.addEventListener("click", () => show(visibleIndex + 1));
           show(0);
         }
-      }
+      });
     </script>
 
     <style>
@@ -282,14 +277,14 @@ const featuredProject = state.featuredProject;
 
       .body-copy { max-width: 78ch; }
 
-      .card-heading, .word-controls {
+      .card-heading, .carousel-controls {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 1rem;
       }
 
-      .card-heading .eyebrow { margin-bottom: 0; }
+      .card-heading .eyebrow { margin-bottom: .3rem; }
 
       .collection-link {
         color: #a1a1aa;
@@ -298,14 +293,18 @@ const featuredProject = state.featuredProject;
 
       .collection-link:hover, .collection-link:focus-visible { color: #4ade80; }
 
-      .word-frame {
-        min-height: 8.5rem;
-        margin: 1rem 0;
+      .reading-viewport {
+        height: 14rem;
+        margin-top: 1rem;
+        overflow: auto;
+        overscroll-behavior: contain;
+        padding-right: .5rem;
+        scrollbar-gutter: stable;
       }
 
       figure { margin: 0; }
 
-      [data-word-slide][hidden] { display: none; }
+      [data-carousel-slide][hidden] { display: none; }
 
       blockquote {
         margin-bottom: 0.7rem;
@@ -318,11 +317,11 @@ const featuredProject = state.featuredProject;
         overflow-wrap: anywhere;
       }
 
-      .word-controls {
+      .carousel-controls {
         justify-content: flex-end;
       }
 
-      .word-controls button {
+      .carousel-controls button {
         width: 2.25rem;
         height: 2.25rem;
         border: 1px solid #3f3f46;
@@ -333,12 +332,12 @@ const featuredProject = state.featuredProject;
         font: inherit;
       }
 
-      .word-controls button:hover:not(:disabled),
-      .word-controls button:focus-visible { border-color: #4ade80; }
+      .carousel-controls button:hover:not(:disabled),
+      .carousel-controls button:focus-visible { border-color: #4ade80; }
 
-      .word-controls button:disabled { cursor: default; opacity: 0.35; }
+      .carousel-controls button:disabled { cursor: default; opacity: 0.35; }
 
-      [data-word-status] {
+      [data-carousel-status] {
         color: #71717a;
         font-size: 0.75rem;
       }
@@ -367,7 +366,9 @@ const featuredProject = state.featuredProject;
           margin-bottom: 2rem;
         }
         .card { padding: 1.15rem; }
-        .word-frame { min-height: 10rem; }
+        .reading-viewport { height: 16rem; }
+        .card-heading { align-items: flex-start; }
+        .carousel-controls { flex: 0 0 auto; }
       }
     </style>
   </body>

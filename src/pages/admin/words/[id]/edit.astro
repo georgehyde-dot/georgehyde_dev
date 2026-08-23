@@ -66,6 +66,10 @@ if (!word) return Astro.redirect("/admin/words", 303);
           <input id="id" value={word.id} readonly aria-readonly="true" />
         </div>
         <div class="field">
+          <label for="title">Title</label>
+          <input id="title" name="title" maxlength="160" value={word.title} required />
+        </div>
+        <div class="field">
           <label for="text">Quote or poem</label>
           <textarea id="text" name="text" required>{word.text}</textarea>
         </div>

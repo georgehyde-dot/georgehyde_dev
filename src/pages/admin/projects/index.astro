@@ -1,0 +1,15 @@
+---
+/** Server-rendered Project collection management using canonical helpers. */
+export const prerender = false;
+import { env as cloudflareEnv } from "cloudflare:workers";
+import type { Env } from "../../../lib/kv-store.ts";
+import { bootstrapSiteContent, listProjects, type ProjectEntry } from "../../../lib/site-content.ts";
+const env = cloudflareEnv as Env; let projects: ProjectEntry[] = []; let selected: string[] = []; let error: string | null = null;
+try { const content = await bootstrapSiteContent(env); selected = content.state.projectSelection.selectedProjectIds; projects = await listProjects(env); }
+catch (caught) { error = caught instanceof Error ? caught.message : "Failed to load Projects."; }
+---
+<html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Projects — Admin</title>
+<style>*,*::before,*::after{box-sizing:border-box}body{margin:0;min-height:100vh;padding:2.5rem 2rem;background:#0a0a0a;color:#e5e5e5;font-family:Inter,system-ui,sans-serif}main{width:min(860px,100%);margin:auto}nav,.top,.actions{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}nav{margin-bottom:1.5rem}.top{justify-content:space-between;margin-bottom:1.5rem}h1{margin:0}h2{margin:.25rem 0}.list{display:grid;gap:1rem}article{background:#121212;border:1px solid #292929;border-radius:10px;padding:1.25rem}.description{white-space:pre-wrap;color:#d4d4d4}.selected{color:#4ade80;font-size:.75rem;font-weight:700;text-transform:uppercase}.actions{margin-top:1rem}a{color:#a3a3a3}.btn,button{border:1px solid #333;border-radius:6px;background:#171717;color:#e5e5e5;cursor:pointer;font:inherit;padding:.5rem .85rem;text-decoration:none}.primary{background:#4ade80;border-color:#4ade80;color:#08120b;font-weight:700}.danger{color:#fca5a5;border-color:#5f2525}.error{color:#fca5a5}@media(max-width:560px){body{padding:1.25rem 1rem}.actions>*{flex:1 1 auto;text-align:center}}</style></head>
+<body><main><nav><a href="/admin">Admin</a><a href="/admin/homepage">Homepage settings</a><a href="/">Home</a></nav><div class="top"><h1>Projects</h1><div class="actions"><a class="btn" href="/admin/homepage#projects-selection">Manage homepage order</a><a class="btn primary" href="/admin/projects/new">New Project</a></div></div>
+{error ? <p class="error">{error}</p> : <div class="list">{projects.map((project) => <article>{selected.includes(project.id) && <div class="selected">Homepage position {selected.indexOf(project.id)+1}</div>}<h2>{project.title}</h2><p class="description">{project.description}</p><a href={project.url} target="_blank" rel="noopener noreferrer">Visit Project</a><div class="actions"><a class="btn" href={`/admin/projects/${project.id}/edit`}>Edit</a><form method="POST" action={`/admin/api/projects/${project.id}`}><input type="hidden" name="_method" value="delete" /><button class="danger" type="submit">Delete</button></form></div></article>)}</div>}
+</main></body></html>

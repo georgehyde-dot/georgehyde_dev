@@ -1,0 +1,20 @@
+---
+/**
+ * Complete public Project collection.
+ *
+ * @decision DEC-SCV2-006
+ * @title Render all collected Projects from the canonical paginated helper
+ * @status accepted
+ * @rationale Homepage selection is intentionally bounded, while this SSR page
+ *   exposes the full deterministic collection without client storage or fetches.
+ */
+export const prerender = false;
+import { env as cloudflareEnv } from "cloudflare:workers";
+import type { Env } from "../../lib/kv-store.ts";
+import { bootstrapSiteContent, listProjects } from "../../lib/site-content.ts";
+const env = cloudflareEnv as Env; await bootstrapSiteContent(env); const projects = await listProjects(env);
+---
+<html lang="en"><head><meta charset="utf-8" /><link rel="icon" type="image/svg+xml" href="/favicon.svg" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="description" content="Projects — George Hyde" /><title>Projects — George Hyde</title><link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin /><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" /></head>
+<body><main class="shell"><nav aria-label="Public navigation"><a href="/">Home</a><a href="/blog">Blog</a></nav><header><h1>Projects</h1><p>Things I have enjoyed building.</p></header>
+{projects.length === 0 ? <p class="empty">No collected projects yet.</p> : <ol class="collection">{projects.map((project) => <li><article id={`project-${project.id}`}><h2>{project.title}</h2><p>{project.description}</p><a href={project.url} target="_blank" rel="noopener noreferrer">Visit project <span aria-hidden="true">↗</span></a></article></li>)}</ol>}
+</main><style>*,*::before,*::after{box-sizing:border-box}:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;background:#09090b;color:#e4e4e7}body{margin:0;min-height:100vh;background:radial-gradient(circle at 85% 0%,rgba(74,222,128,.07),transparent 30rem),#09090b}.shell{width:min(860px,100%);margin:auto;padding:4rem 2rem}nav{display:flex;gap:1rem;margin-bottom:3rem}a{color:#a1a1aa;font-size:.875rem;font-weight:500}a:hover,a:focus-visible{color:#4ade80}header{margin-bottom:2.5rem}h1{margin:0 0 .5rem;color:#fafafa;font-size:clamp(2.2rem,8vw,3.7rem);line-height:1;letter-spacing:-.045em}header p,.empty{margin:0;color:#8a8a93}.collection{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(20rem,100%),1fr));gap:1rem;margin:0;padding:0;list-style:none}article{height:100%;min-width:0;border:1px solid #27272a;border-radius:14px;background:rgba(18,18,20,.88);padding:1.5rem}h2{margin:0 0 .8rem;color:#f4f4f5;overflow-wrap:anywhere}article p{color:#b4b4bb;line-height:1.7;overflow-wrap:anywhere;white-space:pre-wrap}@media(max-width:560px){.shell{padding:2rem 1rem}nav{margin-bottom:2rem}article{padding:1.15rem}}</style></body></html>

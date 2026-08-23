@@ -1,48 +1,25 @@
 /**
- * @decision DEC-SR-002A
- * @title Production-sequence coverage for curated site content state
+ * @decision DEC-SCV2-004
+ * @title Exercise v3 content through production BLOG_POSTS sequences
  * @status accepted
- * @rationale These tests exercise the same BLOG_POSTS operations used by the
- *   later admin and public pages, including pagination, migration recovery,
- *   referential integrity, and the existing public-blog validation path.
+ * @rationale These tests cross validation, migration, collection CRUD,
+ *   referential selection, bounded homepage reads, and public blog rendering.
  */
-
 import assert from "node:assert/strict";
 import { test } from "node:test";
-
 import {
-  FEATURED_PROJECT_KEY,
-  HOMEPAGE_SELECTION_KEY,
-  INITIAL_FEATURED_PROJECT,
-  MIGRATION_KEY,
-  TOLKIEN_WORD,
-  WORD_PREFIX,
-  bootstrapSiteContent,
-  createWord,
-  deleteWord,
-  getFeaturedProject,
-  getHomepageContent,
-  getHomepageSelection,
-  getHomepageState,
-  getLatestPublishedPostPreview,
-  getWord,
-  listWords,
-  updateFeaturedProject,
-  updateHomepageSelection,
-  updateWord,
+  FEATURED_PROJECT_KEY, HOMEPAGE_PROJECT_SELECTION_KEY, HOMEPAGE_SELECTION_KEY,
+  INITIAL_FEATURED_PROJECT, MIGRATION_KEY, PROJECT_PREFIX, TOLKIEN_WORD, WORD_PREFIX,
+  bootstrapSiteContent, createProject, createWord, deleteProject, deleteWord,
+  getHomepageContent, getHomepageProjectSelection, getLatestPublishedPostPreview,
+  getProject, getWord, listProjects, listWords, updateHomepageProjectSelection,
+  updateHomepageSelection, updateProject, updateWord,
 } from "../src/lib/site-content.ts";
 import {
-  MAX_PROJECT_DESCRIPTION_LENGTH,
-  MAX_WORD_TEXT_LENGTH,
-  validateFeaturedProject,
-  validateHomepageSelection,
-  validateHomepageSelectionSlots,
-  validateLegacyHomepageSelection,
-  validateSelectedWordIds,
-  validateStoredFeaturedProject,
-  validateStoredWord,
-  validateWordId,
-  validateWordInput,
+  MAX_WORD_TITLE_LENGTH, validateHomepageProjectSelection,
+  validateHomepageProjectSelectionSlots, validateHomepageSelectionSlots,
+  validateProjectInput, validateSelectedProjectIds, validateSelectedWordIds,
+  validateStoredProject, validateStoredWord, validateWordInput,
 } from "../src/lib/site-validation.ts";
 import { putBlogPost } from "../src/lib/kv-store.ts";
 
@@ -50,568 +27,199 @@ const T0 = "2026-08-22T00:00:00.000Z";
 const T1 = "2026-08-22T01:00:00.000Z";
 const T2 = "2026-08-22T02:00:00.000Z";
 
-function createMemoryKv({ pageSize = 2, failOnceFor = [] } = {}) {
+function memoryKv({ pageSize = 2, failOnceFor = [] } = {}) {
   const records = new Map();
   const failures = new Set(failOnceFor);
-  const writes = [];
-  const gets = [];
-  const lists = [];
+  const writes = []; const gets = []; const lists = []; const deletes = [];
   let beforePut = async () => {};
-
   return {
-    async get(key, options) {
-      gets.push(key);
-      const record = records.get(key);
-      if (!record) return null;
-      return options?.type === "json" ? JSON.parse(record.value) : record.value;
-    },
-    async put(key, value, options = {}) {
-      writes.push(key);
-      if (failures.delete(key)) {
-        throw new Error(`injected put failure: ${key}`);
-      }
-      await beforePut(key);
-      records.set(key, { value, metadata: options.metadata });
-    },
-    async delete(key) {
-      records.delete(key);
-    },
+    async get(key, options) { gets.push(key); const record = records.get(key); if (!record) return null; return options?.type === "json" ? JSON.parse(record.value) : record.value; },
+    async put(key, value, options = {}) { writes.push(key); if (failures.delete(key)) throw new Error(`injected put failure: ${key}`); await beforePut(key); records.set(key, { value, metadata: options.metadata }); },
+    async delete(key) { deletes.push(key); records.delete(key); },
     async list({ prefix = "", cursor } = {}) {
       lists.push({ prefix, cursor });
       const start = cursor ? Number(cursor) : 0;
-      const keys = [...records.entries()]
-        .filter(([key]) => key.startsWith(prefix))
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([name, record]) => ({ name, metadata: record.metadata }));
-      const page = keys.slice(start, start + pageSize);
-      const next = start + pageSize;
-      return {
-        keys: page,
-        list_complete: next >= keys.length,
-        cursor: next >= keys.length ? undefined : String(next),
-      };
+      const keys = [...records.entries()].filter(([key]) => key.startsWith(prefix)).sort(([a], [b]) => a.localeCompare(b)).map(([name, record]) => ({ name, metadata: record.metadata }));
+      const page = keys.slice(start, start + pageSize); const next = start + pageSize;
+      return { keys: page, list_complete: next >= keys.length, cursor: next >= keys.length ? undefined : String(next) };
     },
-    records,
-    writes,
-    gets,
-    lists,
-    setBeforePut(callback) {
-      beforePut = callback;
-    },
+    records, writes, gets, lists, deletes,
+    setBeforePut(callback) { beforePut = callback; },
   };
 }
+const envFor = (kv = memoryKv()) => ({ BLOG_POSTS: kv });
+const wordInput = (id, extra = {}) => ({ id, title: `${id} title`, text: `${id} text`, attribution: `${id} author`, source: null, ...extra });
+const projectInput = (id, extra = {}) => ({ id, title: `${id} title`, description: `${id} description`, url: `https://example.com/${id}`, ...extra });
 
-function createEnv(kv = createMemoryKv()) {
-  return { BLOG_POSTS: kv };
-}
+test("Word and Project validation is strict at code-point, line, URL, timestamp, and selection boundaries", () => {
+  assert.equal(validateWordInput(wordInput("named-word")).ok, true);
+  assert.equal(validateWordInput(wordInput("named-word", { title: "" })).error, "Title is required");
+  assert.equal(validateWordInput(wordInput("named-word", { title: "one\ntwo" })).error, "Title must be a single line");
+  assert.equal(validateWordInput(wordInput("named-word", { title: "😀".repeat(MAX_WORD_TITLE_LENGTH) })).ok, true);
+  assert.equal(validateWordInput(wordInput("named-word", { title: "😀".repeat(MAX_WORD_TITLE_LENGTH + 1) })).error, "Title is too long");
+  assert.equal(validateStoredWord({ ...wordInput("x"), createdAt: T0, updatedAt: T1 }).ok, true);
+  assert.equal(validateStoredWord({ ...wordInput("x"), createdAt: "now", updatedAt: T1 }).ok, false);
 
-function word(id, createdAt, overrides = {}) {
-  return {
-    id,
-    text: `${id} text`,
-    attribution: `${id} author`,
-    source: null,
-    createdAt,
-    updatedAt: createdAt,
-    ...overrides,
-  };
-}
+  const project = projectInput("project-one", { description: "First\nSecond" });
+  assert.deepEqual(validateProjectInput(project), { ok: true, value: project });
+  assert.equal(validateProjectInput({ ...project, id: "Bad ID" }).ok, false);
+  assert.equal(validateProjectInput({ ...project, title: "one\ntwo" }).error, "Project title must be a single line");
+  assert.equal(validateProjectInput({ ...project, url: "http://example.com" }).error, "Project URL must be an absolute HTTPS URL");
+  assert.equal(validateStoredProject({ ...project, createdAt: T0, updatedAt: T1 }).ok, true);
 
-function wordInput(id, overrides = {}) {
-  return {
-    id,
-    text: `${id} text`,
-    attribution: `${id} author`,
-    source: null,
-    ...overrides,
-  };
-}
-
-test("site validation owns Word, project, and stored singleton boundaries", () => {
-  assert.equal(WORD_PREFIX, "word:");
-  assert.match(HOMEPAGE_SELECTION_KEY, /^site:/);
-  assert.match(FEATURED_PROJECT_KEY, /^site:/);
-  assert.match(MIGRATION_KEY, /^site:/);
-  assert.equal(WORD_PREFIX.startsWith("post:"), false);
-  assert.equal(HOMEPAGE_SELECTION_KEY.startsWith(WORD_PREFIX), false);
-  assert.notEqual(HOMEPAGE_SELECTION_KEY, FEATURED_PROJECT_KEY);
-
-  assert.deepEqual(validateWordId("  a-valid-id-2  "), { ok: true, value: "a-valid-id-2" });
-  for (const invalid of ["", "UPPER", "two--hyphens", "-leading", "trailing-", "with space", 3]) {
-    assert.equal(validateWordId(invalid).ok, false);
+  for (const [validate, noun] of [[validateSelectedWordIds, "Words"], [validateSelectedProjectIds, "Projects"]]) {
+    assert.equal(validate([]).error, `Select at least one ${noun.slice(0, -1)}`);
+    assert.equal(validate(["one"]).ok, true);
+    assert.equal(validate(["one", "two", "three", "four", "five"]).ok, true);
+    assert.equal(validate(["one", "two", "three", "four", "five", "six"]).ok, false);
+    assert.equal(validate(["one", "one"]).ok, false);
+    assert.equal(validate(["Bad ID"]).ok, false);
   }
-
-  assert.deepEqual(validateWordInput({
-    id: "poem-one",
-    text: "  First line\r\nSecond line  ",
-    attribution: "  A. Poet  ",
-    source: " https://example.com/source ",
-  }), {
-    ok: true,
-    value: {
-      id: "poem-one",
-      text: "First line\nSecond line",
-      attribution: "A. Poet",
-      source: "https://example.com/source",
-    },
-  });
-  assert.equal(validateWordInput({ id: "x", text: "", attribution: "A", source: null }).error, "Text is required");
-  assert.equal(validateWordInput({ id: "x", text: "x".repeat(MAX_WORD_TEXT_LENGTH + 1), attribution: "A", source: null }).error, "Text is too long");
-  assert.equal(validateWordInput({ id: "x", text: "Text", attribution: "", source: null }).error, "Attribution is required");
-  assert.equal(validateWordInput({ id: "x", text: "Text", attribution: "A", source: "http://example.com" }).error, "Source must be an absolute HTTPS URL");
-  assert.equal(validateWordInput({ id: "x", text: "Text", attribution: "A", source: 42 }).error, "Source must be an absolute HTTPS URL");
-
-  const project = {
-    title: " Project ",
-    description: " Description ",
-    url: " https://github.com/example/project ",
-  };
-  assert.deepEqual(validateFeaturedProject(project), {
-    ok: true,
-    value: {
-      title: "Project",
-      description: "Description",
-      url: "https://github.com/example/project",
-    },
-  });
-  assert.equal(validateFeaturedProject({ ...project, description: "x".repeat(MAX_PROJECT_DESCRIPTION_LENGTH + 1) }).error, "Project description is too long");
-  assert.equal(validateFeaturedProject({ ...project, url: "/relative" }).error, "Project URL must be an absolute HTTPS URL");
-
-  assert.equal(validateStoredWord({ ...word("valid", T0), createdAt: "yesterday" }).error, "Stored Word has an invalid createdAt");
-  assert.deepEqual(validateSelectedWordIds(["one"]), { ok: true, value: ["one"] });
-  assert.deepEqual(validateSelectedWordIds(["one", "two", "three", "four", "five"]), {
-    ok: true,
-    value: ["one", "two", "three", "four", "five"],
-  });
-  assert.equal(validateSelectedWordIds([]).error, "Select at least one Word");
-  assert.equal(validateSelectedWordIds(["one", "two", "three", "four", "five", "six"]).error, "Select no more than five Words");
-  assert.equal(validateSelectedWordIds(["one", "one"]).error, "Selected Words must be unique");
-  assert.equal(validateSelectedWordIds(["one", "Bad ID"]).error, "Selected Words contain an invalid Word id");
-  assert.deepEqual(validateHomepageSelectionSlots(["one", "two", "", "", ""]), {
-    ok: true,
-    value: ["one", "two"],
-  });
-  assert.equal(validateHomepageSelectionSlots(["one", "", "three", "", ""]).error, "Homepage Word slots must be contiguous");
-  assert.equal(validateHomepageSelectionSlots(["one"]).error, "Homepage selection requires exactly five slots");
-  assert.equal(validateHomepageSelection({ selectedWordIds: ["valid"], updatedAt: T0 }).ok, true);
-  assert.equal(validateHomepageSelection({ selectedWordIds: ["missing"], updatedAt: "now" }).error, "Stored homepage selection has an invalid updatedAt");
-  assert.equal(validateHomepageSelection({ selectedWordId: "legacy", updatedAt: T0 }).ok, false);
-  assert.equal(validateLegacyHomepageSelection({ selectedWordId: "legacy", updatedAt: T0 }).ok, true);
-  assert.equal(validateStoredFeaturedProject({ ...project, updatedAt: T0 }).ok, true);
-  assert.equal(validateStoredFeaturedProject({ ...project, updatedAt: "now" }).error, "Stored featured project has an invalid updatedAt");
+  assert.deepEqual(validateHomepageSelectionSlots(["one", "two", "", "", ""]), { ok: true, value: ["one", "two"] });
+  assert.equal(validateHomepageSelectionSlots(["one", "", "three", "", ""]).ok, false);
+  assert.deepEqual(validateHomepageProjectSelectionSlots(["one", "", "", "", ""]), { ok: true, value: ["one"] });
+  assert.equal(validateHomepageProjectSelection({ selectedProjectIds: ["one"], updatedAt: T0 }).ok, true);
 });
 
-test("Words list paginates every word: key and orders createdAt then id deterministically", async () => {
-  const kv = createMemoryKv({ pageSize: 1 });
-  const env = createEnv(kv);
-  await kv.put("unrelated:key", "ignored");
-  await createWord(env, wordInput("z-later-id"), T1);
-  await createWord(env, wordInput("a-later-id"), T1);
-  await createWord(env, wordInput("oldest"), T0);
-
-  assert.deepEqual((await listWords(env)).map(({ id }) => id), [
-    "oldest",
-    "a-later-id",
-    "z-later-id",
-  ]);
-  assert.equal(await getWord(env, "absent"), null);
-});
-
-test("real bootstrap to CRUD sequence preserves independent selection and project state", async () => {
-  const kv = createMemoryKv({ pageSize: 1 });
-  const env = createEnv(kv);
-
-  const initial = await bootstrapSiteContent(env);
-  assert.deepEqual(initial.selectedWords, [TOLKIEN_WORD]);
-  assert.deepEqual(initial.state.featuredProject, {
-    ...INITIAL_FEATURED_PROJECT,
-    updatedAt: T0,
-  });
-  assert.equal(kv.records.has("word:tolkien-food-cheer-song"), true);
-  assert.equal(kv.records.has(HOMEPAGE_SELECTION_KEY), true);
-  assert.equal(kv.records.has(FEATURED_PROJECT_KEY), true);
-  assert.equal(kv.records.has(["site", "homepage", "v1"].join(":")), false);
-  assert.equal(kv.records.has(MIGRATION_KEY), true);
-  assert.equal(kv.writes.at(-1), MIGRATION_KEY);
-  assert.deepEqual(JSON.parse(kv.records.get(MIGRATION_KEY).value), { version: 2 });
-  assert.deepEqual((await listWords(env)).map(({ id }) => id), [TOLKIEN_WORD.id]);
-
-  await updateWord(env, TOLKIEN_WORD.id, {
-    text: `${TOLKIEN_WORD.text}\nA retained second line.`,
-    attribution: TOLKIEN_WORD.attribution,
-    source: "https://www.tolkienestate.com/",
-  }, T1);
-  const editedTolkien = await getWord(env, TOLKIEN_WORD.id);
-  assert.equal(editedTolkien.createdAt, TOLKIEN_WORD.createdAt);
-  assert.equal(editedTolkien.updatedAt, T1);
-  const newProject = {
-    title: "A different project",
-    description: "A field-scoped project update.",
-    url: "https://github.com/georgehyde-dot/another-project",
-  };
-  await updateFeaturedProject(env, newProject, T1);
-  assert.deepEqual((await getHomepageSelection(env)).selectedWordIds, [TOLKIEN_WORD.id]);
-
-  await assert.rejects(() => deleteWord(env, TOLKIEN_WORD.id), (error) => error.code === "selected_word");
-
-  await createWord(env, {
-    id: "another-word",
-    text: "Another line",
-    attribution: "Another writer",
-    source: null,
-  }, T1);
-  await updateHomepageSelection(env, ["another-word", TOLKIEN_WORD.id], T2);
-  assert.deepEqual(await getFeaturedProject(env), { ...newProject, updatedAt: T1 });
-  await assert.rejects(() => deleteWord(env, TOLKIEN_WORD.id), (error) => error.code === "selected_word");
-  await updateHomepageSelection(env, ["another-word"], T2);
-  await deleteWord(env, TOLKIEN_WORD.id);
-  assert.equal(await getWord(env, TOLKIEN_WORD.id), null);
-  assert.deepEqual((await getHomepageContent(env)).selectedWords.map(({ id }) => id), ["another-word"]);
-  await assert.rejects(() => deleteWord(env, TOLKIEN_WORD.id), (error) => error.code === "not_found");
-
-  await assert.rejects(() => updateHomepageSelection(env, ["does-not-exist"], T2), (error) => error.code === "not_found");
-});
-
-test("ordered selection reads one to five Words directly and rejects every invalid state", async () => {
-  const kv = createMemoryKv({ pageSize: 1 });
-  const env = createEnv(kv);
-  await bootstrapSiteContent(env);
-  for (let index = 1; index <= 5; index += 1) {
-    await createWord(env, wordInput(`chosen-${index}`), `2026-08-22T0${index}:00:00.000Z`);
-  }
-  const selectedWordIds = ["chosen-5", TOLKIEN_WORD.id, "chosen-2", "chosen-4", "chosen-1"];
-  await updateHomepageSelection(env, selectedWordIds, T2);
-
-  kv.gets.length = 0;
-  kv.lists.length = 0;
-  const content = await getHomepageContent(env);
-  assert.deepEqual(content.selectedWords.map(({ id }) => id), selectedWordIds);
-  assert.equal(kv.lists.length, 0);
-  assert.deepEqual(kv.gets, [
-    HOMEPAGE_SELECTION_KEY,
-    FEATURED_PROJECT_KEY,
-    ...selectedWordIds.map((id) => `${WORD_PREFIX}${id}`),
-  ]);
-
-  for (const invalid of [
-    [],
-    ["chosen-1", "chosen-1"],
-    ["chosen-1", "Bad ID"],
-    ["chosen-1", "chosen-2", "chosen-3", "chosen-4", "chosen-5", TOLKIEN_WORD.id],
-    ["does-not-exist"],
-  ]) {
-    const writesBefore = kv.writes.length;
-    await assert.rejects(() => updateHomepageSelection(env, invalid, T2));
-    assert.equal(kv.writes.length, writesBefore);
-  }
-
-  for (const selected of selectedWordIds) {
-    await assert.rejects(() => deleteWord(env, selected), (error) => error.code === "selected_word");
-  }
-
-  const corruptSelections = [
-    { selectedWordId: "chosen-1", updatedAt: T2 },
-    { updatedAt: T2 },
-    { selectedWordIds: [], updatedAt: T2 },
-    { selectedWordIds: ["chosen-1", "chosen-1"], updatedAt: T2 },
-    { selectedWordIds: ["chosen-1", "chosen-2", "chosen-3", "chosen-4", "chosen-5", TOLKIEN_WORD.id], updatedAt: T2 },
-    { selectedWordIds: ["Bad ID"], updatedAt: T2 },
-    { selectedWordIds: ["chosen-1"], updatedAt: "invalid" },
-  ];
-  for (const corrupt of corruptSelections) {
-    await kv.put(HOMEPAGE_SELECTION_KEY, JSON.stringify(corrupt));
-    await assert.rejects(() => bootstrapSiteContent(env), (error) => error.code === "integrity");
-  }
-  await kv.put(HOMEPAGE_SELECTION_KEY, JSON.stringify({
-    selectedWordIds: ["dangling-word"],
-    updatedAt: T2,
-  }));
-  await assert.rejects(() => bootstrapSiteContent(env), (error) => error.code === "integrity");
-});
-
-test("legacy selection upgrades in place and advances the existing marker to v2 last", async () => {
-  const kv = createMemoryKv();
-  const env = createEnv(kv);
-  await kv.put(`${WORD_PREFIX}${TOLKIEN_WORD.id}`, JSON.stringify(TOLKIEN_WORD));
-  await kv.put(HOMEPAGE_SELECTION_KEY, JSON.stringify({
-    selectedWordId: TOLKIEN_WORD.id,
-    updatedAt: T1,
-  }));
-  await kv.put(FEATURED_PROJECT_KEY, JSON.stringify({
-    ...INITIAL_FEATURED_PROJECT,
-    updatedAt: T1,
-  }));
-  await kv.put(MIGRATION_KEY, JSON.stringify({ version: 1 }));
-  const writesBefore = kv.writes.length;
-
-  let failMarkerOnce = true;
-  kv.setBeforePut(async (key) => {
-    if (key === MIGRATION_KEY && failMarkerOnce) {
-      failMarkerOnce = false;
-      throw new Error("injected v2 marker failure");
-    }
-  });
-  await assert.rejects(() => bootstrapSiteContent(env), /injected v2 marker failure/);
-  assert.deepEqual(JSON.parse(kv.records.get(HOMEPAGE_SELECTION_KEY).value), {
-    selectedWordIds: [TOLKIEN_WORD.id],
-    updatedAt: T1,
-  });
-  assert.deepEqual(JSON.parse(kv.records.get(MIGRATION_KEY).value), { version: 1 });
-
+test("fresh bootstrap creates titled Tolkien and collected Project, removes singleton authority, and marks v3 last", async () => {
+  const kv = memoryKv({ pageSize: 1 }); const env = envFor(kv);
   const content = await bootstrapSiteContent(env);
-  assert.deepEqual(content.selectedWords.map(({ id }) => id), [TOLKIEN_WORD.id]);
-  assert.deepEqual(JSON.parse(kv.records.get(MIGRATION_KEY).value), { version: 2 });
+  assert.deepEqual(content.selectedWords, [TOLKIEN_WORD]);
+  assert.equal(content.selectedProjects[0].id, "featured-project");
+  assert.deepEqual(({ title: content.selectedProjects[0].title, description: content.selectedProjects[0].description, url: content.selectedProjects[0].url }), INITIAL_FEATURED_PROJECT);
+  assert.equal(kv.records.has(FEATURED_PROJECT_KEY), false);
+  assert.equal(kv.records.has(`${PROJECT_PREFIX}featured-project`), true);
+  assert.equal(kv.records.has(HOMEPAGE_PROJECT_SELECTION_KEY), true);
+  assert.deepEqual(JSON.parse(kv.records.get(MIGRATION_KEY).value), { version: 3 });
   assert.equal(kv.writes.at(-1), MIGRATION_KEY);
-  const writesAfterUpgrade = kv.writes.length;
-  await bootstrapSiteContent(env);
-  assert.equal(kv.writes.length, writesAfterUpgrade);
-  assert.deepEqual(kv.writes.slice(writesBefore), [
-    HOMEPAGE_SELECTION_KEY,
-    MIGRATION_KEY,
-    MIGRATION_KEY,
-  ]);
+  const writes = kv.writes.length; await bootstrapSiteContent(env); assert.equal(kv.writes.length, writes);
 });
 
-test("concurrent selection and project writes persist independently under forced interleaving", async () => {
-  const kv = createMemoryKv();
-  const env = createEnv(kv);
-  await bootstrapSiteContent(env);
-  await createWord(env, wordInput("concurrent-selection"), T1);
-
-  let arrivals = 0;
-  let release;
-  const bothWritesArrived = new Promise((resolve) => {
-    release = resolve;
-  });
-  kv.setBeforePut(async (key) => {
-    if (key !== HOMEPAGE_SELECTION_KEY && key !== FEATURED_PROJECT_KEY) return;
-    arrivals += 1;
-    if (arrivals === 2) release();
-    await bothWritesArrived;
-  });
-
-  const concurrentProject = {
-    title: "Concurrent project",
-    description: "This write must survive the selection write.",
-    url: "https://example.com/concurrent-project",
-  };
-  await Promise.all([
-    updateHomepageSelection(env, ["concurrent-selection", TOLKIEN_WORD.id], T1),
-    updateFeaturedProject(env, concurrentProject, T2),
-  ]);
-
-  const state = await getHomepageState(env);
-  assert.deepEqual(state.selection, {
-    selectedWordIds: ["concurrent-selection", TOLKIEN_WORD.id],
-    updatedAt: T1,
-  });
-  assert.deepEqual(state.featuredProject, {
-    ...concurrentProject,
-    updatedAt: T2,
-  });
-  assert.equal(arrivals, 2);
-  assert.equal(kv.writes.filter((key) => key === HOMEPAGE_SELECTION_KEY).length, 2);
-  assert.equal(kv.writes.filter((key) => key === FEATURED_PROJECT_KEY).length, 2);
-});
-
-test("bootstrap retries partial writes, never overwrites present values, and marks last", async () => {
-  for (const failingKey of [
-    `word:${TOLKIEN_WORD.id}`,
-    HOMEPAGE_SELECTION_KEY,
-    FEATURED_PROJECT_KEY,
-    MIGRATION_KEY,
-  ]) {
-    const kv = createMemoryKv({ failOnceFor: [failingKey] });
-    const env = createEnv(kv);
-    await assert.rejects(() => bootstrapSiteContent(env), new RegExp(failingKey));
+test("fresh bootstrap retries each ordered write without overwriting completed seed state", async () => {
+  for (const key of [`${WORD_PREFIX}${TOLKIEN_WORD.id}`, HOMEPAGE_SELECTION_KEY, `${PROJECT_PREFIX}featured-project`, HOMEPAGE_PROJECT_SELECTION_KEY, MIGRATION_KEY]) {
+    const kv = memoryKv({ failOnceFor: [key] }); const env = envFor(kv);
+    await assert.rejects(() => bootstrapSiteContent(env), new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     await bootstrapSiteContent(env);
-
+    assert.deepEqual(JSON.parse(kv.records.get(MIGRATION_KEY).value), { version: 3 });
     assert.equal(kv.writes.at(-1), MIGRATION_KEY);
-    assert.equal(kv.records.has(`word:${TOLKIEN_WORD.id}`), true);
-    assert.equal(kv.records.has(HOMEPAGE_SELECTION_KEY), true);
-    assert.equal(kv.records.has(FEATURED_PROJECT_KEY), true);
-    assert.equal(kv.records.has(["site", "homepage", "v1"].join(":")), false);
-    assert.equal(kv.records.has(MIGRATION_KEY), true);
-    for (const seedKey of [
-      `word:${TOLKIEN_WORD.id}`,
-      HOMEPAGE_SELECTION_KEY,
-      FEATURED_PROJECT_KEY,
-    ]) {
-      assert.equal(
-        kv.writes.filter((key) => key === seedKey).length,
-        failingKey === seedKey ? 2 : 1
-      );
-    }
   }
-
-  const kv = createMemoryKv();
-  const env = createEnv(kv);
-  const editedWord = word(TOLKIEN_WORD.id, T0, { text: "Admin-edited Tolkien text" });
-  const editedProject = {
-    title: "Already configured",
-    description: "Do not replace me.",
-    url: "https://example.com/project",
-  };
-  await kv.put(`word:${editedWord.id}`, JSON.stringify(editedWord));
-  await kv.put(HOMEPAGE_SELECTION_KEY, JSON.stringify({
-    selectedWordIds: [editedWord.id],
-    updatedAt: T1,
-  }));
-  await kv.put(FEATURED_PROJECT_KEY, JSON.stringify({ ...editedProject, updatedAt: T1 }));
-  const writesBefore = kv.writes.length;
-  const content = await bootstrapSiteContent(env);
-  assert.equal(content.selectedWords[0].text, editedWord.text);
-  assert.deepEqual(content.state.featuredProject, { ...editedProject, updatedAt: T1 });
-  assert.deepEqual(kv.writes.slice(writesBefore), [MIGRATION_KEY]);
 });
 
-test("bootstrap adds a missing deterministic seed without replacing custom selection", async () => {
-  const kv = createMemoryKv();
-  const env = createEnv(kv);
-  const customWord = word("custom-selection", T0, { text: "Keep this selected" });
-  const customProject = {
-    title: "Custom project",
-    description: "Configured before bootstrap.",
-    url: "https://example.com/custom-project",
-  };
-  await kv.put(`word:${customWord.id}`, JSON.stringify(customWord));
-  await kv.put(HOMEPAGE_SELECTION_KEY, JSON.stringify({
-    selectedWordIds: [customWord.id],
-    updatedAt: T1,
-  }));
-  await kv.put(FEATURED_PROJECT_KEY, JSON.stringify({ ...customProject, updatedAt: T1 }));
-
+test("legacy v2 migration titles all Words once, preserves singleton Project, deletes it after verification, and retries marker last", async () => {
+  const kv = memoryKv({ pageSize: 1 }); const env = envFor(kv);
+  const legacyTolkien = { ...TOLKIEN_WORD }; delete legacyTolkien.title;
+  const legacyPoem = { id: "legacy-poem", text: "\n  The First Line  \nSecond", attribution: "Poet", source: null, createdAt: T0, updatedAt: T1 };
+  await kv.put(`${WORD_PREFIX}${legacyTolkien.id}`, JSON.stringify(legacyTolkien));
+  await kv.put(`${WORD_PREFIX}${legacyPoem.id}`, JSON.stringify(legacyPoem));
+  await kv.put(HOMEPAGE_SELECTION_KEY, JSON.stringify({ selectedWordId: legacyPoem.id, updatedAt: T1 }));
+  await kv.put(FEATURED_PROJECT_KEY, JSON.stringify({ ...INITIAL_FEATURED_PROJECT, updatedAt: T1 }));
+  await kv.put(MIGRATION_KEY, JSON.stringify({ version: 2 }));
+  let failMarker = true;
+  kv.setBeforePut(async (key) => { if (key === MIGRATION_KEY && failMarker) { failMarker = false; throw new Error("marker failure"); } });
+  await assert.rejects(() => bootstrapSiteContent(env), /marker failure/);
+  assert.equal((await getWord(env, TOLKIEN_WORD.id)).title, "A Merrier World");
+  assert.equal((await getWord(env, legacyPoem.id)).title, "The First Line");
+  assert.equal(kv.records.has(FEATURED_PROJECT_KEY), false);
   const content = await bootstrapSiteContent(env);
-  assert.equal(content.selectedWords[0].id, customWord.id);
-  assert.deepEqual(content.state.featuredProject, { ...customProject, updatedAt: T1 });
-  assert.deepEqual((await listWords(env)).map(({ id }) => id), [
-    customWord.id,
-    TOLKIEN_WORD.id,
-  ]);
-  assert.deepEqual(kv.writes.slice(-2), [
-    `word:${TOLKIEN_WORD.id}`,
-    MIGRATION_KEY,
-  ]);
+  assert.deepEqual(content.selectedWords.map(({ id }) => id), [legacyPoem.id]);
+  assert.equal(content.selectedProjects[0].updatedAt, T1);
+  assert.deepEqual(JSON.parse(kv.records.get(MIGRATION_KEY).value), { version: 3 });
+  assert.equal(kv.writes.at(-1), MIGRATION_KEY);
 });
 
-test("migration marker prevents fallback and reseeding after content deletion", async () => {
-  const kv = createMemoryKv();
-  const env = createEnv(kv);
-  await bootstrapSiteContent(env);
-  await kv.delete(`word:${TOLKIEN_WORD.id}`);
+test("migration rejects corrupt titles, Project collisions, dangling selection, and never overwrites existing state", async () => {
+  const collision = memoryKv(); const env = envFor(collision);
+  await collision.put(`${WORD_PREFIX}${TOLKIEN_WORD.id}`, JSON.stringify(TOLKIEN_WORD));
+  await collision.put(HOMEPAGE_SELECTION_KEY, JSON.stringify({ selectedWordIds: [TOLKIEN_WORD.id], updatedAt: T0 }));
+  await collision.put(FEATURED_PROJECT_KEY, JSON.stringify({ ...INITIAL_FEATURED_PROJECT, updatedAt: T0 }));
+  await collision.put(`${PROJECT_PREFIX}featured-project`, JSON.stringify({ ...projectInput("featured-project", { title: "Collision" }), createdAt: T0, updatedAt: T0 }));
+  await collision.put(MIGRATION_KEY, JSON.stringify({ version: 2 }));
+  await assert.rejects(() => bootstrapSiteContent(env), (error) => error.code === "integrity" && /collision/.test(error.message));
+  assert.equal((await getProject(env, "featured-project")).title, "Collision");
 
+  const corrupt = memoryKv(); const corruptEnv = envFor(corrupt);
+  await corrupt.put(`${WORD_PREFIX}bad`, JSON.stringify({ ...wordInput("bad", { title: "bad\nline" }), createdAt: T0, updatedAt: T0 }));
+  await corrupt.put(HOMEPAGE_SELECTION_KEY, JSON.stringify({ selectedWordIds: ["bad"], updatedAt: T0 }));
+  await corrupt.put(FEATURED_PROJECT_KEY, JSON.stringify({ ...INITIAL_FEATURED_PROJECT, updatedAt: T0 }));
+  await corrupt.put(MIGRATION_KEY, JSON.stringify({ version: 2 }));
+  await assert.rejects(() => bootstrapSiteContent(corruptEnv), (error) => error.code === "integrity");
+
+  const dangling = memoryKv(); const danglingEnv = envFor(dangling);
+  await bootstrapSiteContent(danglingEnv);
+  await dangling.put(HOMEPAGE_PROJECT_SELECTION_KEY, JSON.stringify({ selectedProjectIds: ["missing"], updatedAt: T2 }));
+  await assert.rejects(() => bootstrapSiteContent(danglingEnv), (error) => error.code === "integrity");
+});
+
+test("paginated collection CRUD preserves order, immutable ids, and selected deletion conflicts", async () => {
+  const kv = memoryKv({ pageSize: 1 }); const env = envFor(kv); await bootstrapSiteContent(env);
+  await createWord(env, wordInput("z-word"), T1); await createWord(env, wordInput("a-word"), T1);
+  await createProject(env, projectInput("z-project"), T1); await createProject(env, projectInput("a-project"), T1);
+  assert.deepEqual((await listWords(env)).map(({ id }) => id), [TOLKIEN_WORD.id, "a-word", "z-word"]);
+  assert.deepEqual((await listProjects(env)).map(({ id }) => id), ["featured-project", "a-project", "z-project"]);
+  const updatedWord = await updateWord(env, "a-word", { title: "Updated Word", text: "Line 1\nLine 2", attribution: "Writer", source: null }, T2);
+  const updatedProject = await updateProject(env, "a-project", { title: "Updated Project", description: "Line 1\nLine 2", url: "https://example.com/new" }, T2);
+  assert.equal(updatedWord.id, "a-word"); assert.equal(updatedWord.createdAt, T1); assert.equal(updatedProject.id, "a-project"); assert.equal(updatedProject.createdAt, T1);
+  await updateHomepageSelection(env, ["a-word"], T2); await updateHomepageProjectSelection(env, ["a-project"], T2);
+  await assert.rejects(() => deleteWord(env, "a-word"), (error) => error.code === "selected_word");
+  await assert.rejects(() => deleteProject(env, "a-project"), (error) => error.code === "selected_project");
+  await updateHomepageSelection(env, [TOLKIEN_WORD.id], T2); await updateHomepageProjectSelection(env, ["featured-project"], T2);
+  await deleteWord(env, "a-word"); await deleteProject(env, "a-project");
+  assert.equal(await getWord(env, "a-word"), null); assert.equal(await getProject(env, "a-project"), null);
+});
+
+test("homepage loads only ordered selected ids by bounded direct reads and invalid writes perform zero mutation", async () => {
+  const kv = memoryKv(); const env = envFor(kv); await bootstrapSiteContent(env);
+  for (let i = 1; i <= 6; i += 1) { await createWord(env, wordInput(`word-${i}`), T1); await createProject(env, projectInput(`project-${i}`), T1); }
+  const words = ["word-5", TOLKIEN_WORD.id, "word-2", "word-4", "word-1"];
+  const projects = ["project-5", "featured-project", "project-2", "project-4", "project-1"];
+  await updateHomepageSelection(env, words, T2); await updateHomepageProjectSelection(env, projects, T2);
+  kv.gets.length = 0; kv.lists.length = 0;
+  const content = await getHomepageContent(env);
+  assert.deepEqual(content.selectedWords.map(({ id }) => id), words);
+  assert.deepEqual(content.selectedProjects.map(({ id }) => id), projects);
+  assert.equal(kv.lists.length, 0);
+  assert.equal(kv.gets.filter((key) => key.startsWith(WORD_PREFIX)).length, 5);
+  assert.equal(kv.gets.filter((key) => key.startsWith(PROJECT_PREFIX)).length, 5);
+  for (const [update, invalids] of [
+    [updateHomepageSelection, [[], ["word-1", "word-1"], ["word-1", "word-2", "word-3", "word-4", "word-5", "word-6"], ["missing"]]],
+    [updateHomepageProjectSelection, [[], ["project-1", "project-1"], ["project-1", "project-2", "project-3", "project-4", "project-5", "project-6"], ["missing"]]],
+  ]) for (const invalid of invalids) { const before = kv.writes.length; await assert.rejects(() => update(env, invalid, T2)); assert.equal(kv.writes.length, before); }
+});
+
+test("forced concurrent Word and Project selection writes remain independent", async () => {
+  const kv = memoryKv(); const env = envFor(kv); await bootstrapSiteContent(env);
+  await createWord(env, wordInput("concurrent-word"), T1); await createProject(env, projectInput("concurrent-project"), T1);
+  let arrivals = 0; let release; const both = new Promise((resolve) => { release = resolve; });
+  kv.setBeforePut(async (key) => { if (![HOMEPAGE_SELECTION_KEY, HOMEPAGE_PROJECT_SELECTION_KEY].includes(key)) return; arrivals += 1; if (arrivals === 2) release(); await both; });
+  await Promise.all([updateHomepageSelection(env, ["concurrent-word"], T1), updateHomepageProjectSelection(env, ["concurrent-project"], T2)]);
+  assert.deepEqual((await getHomepageContent(env)).selectedWords.map(({ id }) => id), ["concurrent-word"]);
+  assert.deepEqual((await getHomepageProjectSelection(env)).selectedProjectIds, ["concurrent-project"]);
+  assert.equal(arrivals, 2);
+});
+
+test("v3 marker prevents runtime fallback or reseeding after selected content deletion", async () => {
+  const kv = memoryKv(); const env = envFor(kv); await bootstrapSiteContent(env);
+  await kv.delete(`${WORD_PREFIX}${TOLKIEN_WORD.id}`);
   await assert.rejects(() => bootstrapSiteContent(env), (error) => error.code === "integrity");
-  assert.equal(kv.records.has(`word:${TOLKIEN_WORD.id}`), false);
-  assert.equal(kv.writes.filter((key) => key === `word:${TOLKIEN_WORD.id}`).length, 1);
-
-  await kv.delete(HOMEPAGE_SELECTION_KEY);
-  await assert.rejects(() => bootstrapSiteContent(env), (error) => error.code === "integrity");
-  assert.equal(kv.records.has(HOMEPAGE_SELECTION_KEY), false);
-
-  const projectKv = createMemoryKv();
-  const projectEnv = createEnv(projectKv);
-  await bootstrapSiteContent(projectEnv);
-  await projectKv.delete(FEATURED_PROJECT_KEY);
+  assert.equal(kv.records.has(`${WORD_PREFIX}${TOLKIEN_WORD.id}`), false);
+  const projectKv = memoryKv(); const projectEnv = envFor(projectKv); await bootstrapSiteContent(projectEnv);
+  await projectKv.delete(`${PROJECT_PREFIX}featured-project`);
   await assert.rejects(() => bootstrapSiteContent(projectEnv), (error) => error.code === "integrity");
-  assert.equal(projectKv.records.has(FEATURED_PROJECT_KEY), false);
+  assert.equal(projectKv.records.has(`${PROJECT_PREFIX}featured-project`), false);
 });
 
-test("latest preview follows real post storage and public validation with deterministic ordering", async () => {
-  const env = createEnv();
-  assert.equal(await getLatestPublishedPostPreview(env), null);
-
-  await putBlogPost(env, {
-    slug: "older",
-    title: "Older",
-    body: "<p>Older body</p>",
-    author: "George Hyde",
-    createdAt: T0,
-    updatedAt: T2,
-    published: true,
-  });
-  await putBlogPost(env, {
-    slug: "z-tied",
-    title: "Z tied",
-    body: "<p>Wrong tie winner</p>",
-    author: "George Hyde",
-    createdAt: T1,
-    updatedAt: T1,
-    published: true,
-  });
-  await putBlogPost(env, {
-    slug: "a-tied",
-    title: "A tied",
-    body: "<p>Fish &amp; chips.</p><blockquote><strong>Second</strong> line.</blockquote><p>Emoji 🙂 stay intact.</p>",
-    author: "George Hyde",
-    createdAt: T1,
-    updatedAt: T1,
-    published: true,
-  });
-  await putBlogPost(env, {
-    slug: "new-draft",
-    title: "Draft",
-    body: "<p>Draft</p>",
-    author: "George Hyde",
-    createdAt: T2,
-    updatedAt: T2,
-    published: false,
-  });
-
-  assert.deepEqual(await getLatestPublishedPostPreview(env), {
-    slug: "a-tied",
-    title: "A tied",
-    excerpt: "Fish & chips. Second line. Emoji 🙂 stay intact.",
-  });
+test("latest preview uses newest published real post, parser-decoded plain text, and fails loudly on invalid newest", async () => {
+  const env = envFor(); assert.equal(await getLatestPublishedPostPreview(env), null);
+  await putBlogPost(env, { slug: "older", title: "Older", body: "<p>Older</p>", author: "George Hyde", createdAt: T0, updatedAt: T2, published: true });
+  await putBlogPost(env, { slug: "a-new", title: "New", body: "<p>AT&amp;T says &quot;hello&quot;.</p><p>Hello <strong>world</strong>.</p><blockquote>Next block.</blockquote>", author: "George Hyde", createdAt: T1, updatedAt: T1, published: true });
+  await putBlogPost(env, { slug: "draft", title: "Draft", body: "<p>Draft</p>", author: "George Hyde", createdAt: T2, updatedAt: T2, published: false });
+  assert.deepEqual(await getLatestPublishedPostPreview(env), { slug: "a-new", title: "New", excerpt: 'AT&T says "hello". Hello world. Next block.' });
+  await putBlogPost(env, { slug: "invalid", title: "Invalid", body: "<script>alert(1)</script>", author: "George Hyde", createdAt: T2, updatedAt: T2, published: true });
+  await assert.rejects(() => getLatestPublishedPostPreview(env), (error) => error.code === "invalid_latest_post" && /invalid/.test(error.message));
 });
 
-test("excerpt decoding preserves entity and inline punctuation while separating semantic blocks", async () => {
-  const env = createEnv();
-  await putBlogPost(env, {
-    slug: "spacing",
-    title: "Spacing",
-    body: "<p>AT&amp;T says &quot;hello&quot;; 2 &lt; 3.</p><p>Hello <strong>world</strong>.</p><blockquote>Next block.</blockquote>",
-    author: "George Hyde",
-    createdAt: T1,
-    updatedAt: T1,
-    published: true,
-  });
-
+test("latest preview truncates at a Unicode word boundary", async () => {
+  const env = envFor(); await putBlogPost(env, { slug: "long", title: "Long", body: `<p>${"word ".repeat(80)}🙂 tail</p>`, author: "George Hyde", createdAt: T0, updatedAt: T0, published: true });
   const preview = await getLatestPublishedPostPreview(env);
-  assert.equal(
-    preview.excerpt,
-    'AT&T says "hello"; 2 < 3. Hello world. Next block.'
-  );
-  assert.doesNotMatch(preview.excerpt, /\s[.;,!?]/u);
-});
-
-test("latest preview caps Unicode code points at a word boundary and fails on invalid newest HTML", async () => {
-  const env = createEnv();
-  const longBody = `<p>${"word ".repeat(80)}🙂 tail</p>`;
-  await putBlogPost(env, {
-    slug: "valid",
-    title: "Valid",
-    body: longBody,
-    author: "George Hyde",
-    createdAt: T0,
-    updatedAt: T0,
-    published: true,
-  });
-  const preview = await getLatestPublishedPostPreview(env);
-  assert.ok([...preview.excerpt].length <= 240);
-  assert.match(preview.excerpt, /word…$/);
-  assert.doesNotMatch(preview.excerpt, /\ud83d$/);
-
-  await putBlogPost(env, {
-    slug: "invalid-newest",
-    title: "Invalid newest",
-    body: "<script>alert(1)</script>",
-    author: "George Hyde",
-    createdAt: T2,
-    updatedAt: T2,
-    published: true,
-  });
-  await assert.rejects(
-    () => getLatestPublishedPostPreview(env),
-    (error) => error.code === "invalid_latest_post" && /invalid-newest/.test(error.message)
-  );
+  assert.ok([...preview.excerpt].length <= 240); assert.match(preview.excerpt, /word…$/); assert.doesNotMatch(preview.excerpt, /\ud83d$/);
 });

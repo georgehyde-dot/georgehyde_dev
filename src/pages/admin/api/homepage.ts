@@ -1,5 +1,5 @@
 /**
- * Independent selection and featured-project mutations.
+ * Independent ordered Word and Project selection mutations.
  *
  * @decision DEC-SR-005A
  * @title Route each homepage action to its independent write helper
@@ -12,11 +12,11 @@ import type { APIContext } from "astro";
 import {
   SiteContentError,
   bootstrapSiteContent,
-  updateFeaturedProject,
+  updateHomepageProjectSelection,
   updateHomepageSelection,
 } from "../../../lib/site-content.ts";
 import {
-  validateFeaturedProject,
+  validateHomepageProjectSelectionSlots,
   validateHomepageSelectionSlots,
 } from "../../../lib/site-validation.ts";
 import type { Env } from "../../../lib/kv-store.ts";
@@ -58,7 +58,7 @@ export async function POST(context: APIContext): Promise<Response> {
   }
 
   const action = formData.get("_action");
-  if (action === "selection") {
+  if (action === "word-selection") {
     const selectedWordIds = validateHomepageSelectionSlots(
       formData.getAll("selectedWordIds")
     );
@@ -71,23 +71,21 @@ export async function POST(context: APIContext): Promise<Response> {
     } catch (error) {
       return siteContentErrorResponse(error);
     }
-    return context.redirect("/admin/words", 303);
+    return context.redirect("/admin/homepage#words-selection", 303);
   }
 
-  if (action === "project") {
-    const project = validateFeaturedProject({
-      title: formData.get("title"),
-      description: formData.get("description"),
-      url: formData.get("url"),
-    });
-    if (!project.ok) return new Response(project.error, { status: 400 });
+  if (action === "project-selection") {
+    const selectedProjectIds = validateHomepageProjectSelectionSlots(
+      formData.getAll("selectedProjectIds")
+    );
+    if (!selectedProjectIds.ok) return new Response(selectedProjectIds.error, { status: 400 });
     try {
       await bootstrapSiteContent(env);
-      await updateFeaturedProject(env, project.value);
+      await updateHomepageProjectSelection(env, selectedProjectIds.value);
     } catch (error) {
       return siteContentErrorResponse(error);
     }
-    return context.redirect("/admin/homepage", 303);
+    return context.redirect("/admin/homepage#projects-selection", 303);
   }
 
   return new Response("Invalid homepage action", { status: 400 });

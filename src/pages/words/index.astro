@@ -50,14 +50,16 @@ const words = await listWords(env);
         <p>Quotes and poems I return to.</p>
       </header>
 
-      {
-        words.length === 0 ? (
-          <p class="empty">No collected words yet.</p>
-        ) : (
+      {words.length === 0 ? <p class="empty">No collected words yet.</p> : (
+        <div class="collection-layout">
+          <aside class="title-index" aria-label="Words index">
+            <h2>Index</h2>
+            <ol>{words.map((word) => <li><a data-index-link href={`#word-${word.id}`}>{word.title}</a></li>)}</ol>
+          </aside>
           <ol class="collection">
-            {words.map((word) => (
-              <li>
-                <article>
+            {words.map((word) => <li>
+                <article id={`word-${word.id}`} tabindex="-1">
+                  <h2>{word.title}</h2>
                   <blockquote>{word.text}</blockquote>
                   <footer>
                     <span>— {word.attribution}</span>
@@ -70,12 +72,20 @@ const words = await listWords(env);
                     )}
                   </footer>
                 </article>
-              </li>
-            ))}
+              </li>)}
           </ol>
-        )
-      }
+        </div>
+      )}
     </main>
+
+    <script is:inline>
+      document.querySelectorAll("[data-index-link]").forEach((link) => {
+        link.addEventListener("click", () => {
+          const id = link.getAttribute("href")?.slice(1);
+          requestAnimationFrame(() => document.getElementById(id)?.focus({ preventScroll: true }));
+        });
+      });
+    </script>
 
     <style>
       *, *::before, *::after { box-sizing: border-box; }
@@ -96,7 +106,7 @@ const words = await listWords(env);
       }
 
       .shell {
-        width: min(760px, 100%);
+        width: min(1080px, 100%);
         margin: 0 auto;
         padding: 4rem 2rem;
       }
@@ -127,6 +137,26 @@ const words = await listWords(env);
 
       header p, .empty { margin: 0; color: #8a8a93; }
 
+      .collection-layout {
+        display: grid;
+        grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
+        align-items: start;
+        gap: 2rem;
+      }
+
+      .title-index {
+        position: sticky;
+        top: 1.5rem;
+        max-height: calc(100vh - 3rem);
+        overflow: auto;
+        border: 1px solid #27272a;
+        border-radius: 12px;
+        padding: 1rem;
+      }
+      .title-index h2 { margin: 0 0 .75rem; font-size: .75rem; color: #71717a; letter-spacing: .12em; text-transform: uppercase; }
+      .title-index ol { display: grid; gap: .55rem; margin: 0; padding: 0; list-style: none; }
+      .title-index a { display: block; overflow-wrap: anywhere; }
+
       .collection {
         display: grid;
         gap: 1rem;
@@ -141,7 +171,11 @@ const words = await listWords(env);
         border-radius: 14px;
         background: rgba(18, 18, 20, 0.88);
         padding: 1.5rem;
+        scroll-margin-top: 1.5rem;
       }
+
+      article:focus { outline: 2px solid #4ade80; outline-offset: 4px; }
+      article h2 { margin: 0 0 .8rem; color: #f4f4f5; font-size: 1.25rem; overflow-wrap: anywhere; }
 
       blockquote {
         margin: 0 0 1rem;
@@ -173,6 +207,12 @@ const words = await listWords(env);
           flex-direction: column;
           gap: 0.6rem;
         }
+      }
+      @media (max-width: 760px) {
+        .collection-layout { display: block; }
+        .title-index { position: static; max-height: none; margin-bottom: 1.5rem; overflow-x: auto; }
+        .title-index ol { display: flex; width: max-content; max-width: none; gap: .7rem; }
+        .title-index a { border: 1px solid #3f3f46; border-radius: 999px; padding: .45rem .75rem; white-space: nowrap; }
       }
     </style>
   </body>

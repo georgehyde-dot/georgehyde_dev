@@ -55,6 +55,7 @@ export async function POST(context: APIContext): Promise<Response> {
 
   const input = validateWordInput({
     id: formData.get("id"),
+    title: formData.get("title"),
     text: formData.get("text"),
     attribution: formData.get("attribution"),
     source: formData.get("source"),

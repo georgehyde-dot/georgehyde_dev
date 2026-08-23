@@ -67,6 +67,7 @@ export async function POST(context: APIContext): Promise<Response> {
 
   const input = validateWordInput({
     id: context.params.id,
+    title: formData.get("title"),
     text: formData.get("text"),
     attribution: formData.get("attribution"),
     source: formData.get("source"),
@@ -76,6 +77,7 @@ export async function POST(context: APIContext): Promise<Response> {
   try {
     await bootstrapSiteContent(env);
     await updateWord(env, input.value.id, {
+      title: input.value.title,
       text: input.value.text,
       attribution: input.value.attribution,
       source: input.value.source,

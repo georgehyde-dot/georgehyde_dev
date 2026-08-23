@@ -14,6 +14,13 @@
  * @rationale The selection singleton stores one strict ordered id list. Slot
  *   parsing is explicit, rejects gaps, duplicates, and overflow, and never
  *   silently truncates or deduplicates forged state.
+ *
+ * @decision DEC-SCV2-001
+ * @title Validate titled Words and collected Projects at one boundary
+ * @status accepted
+ * @rationale Word titles, Project records, and both ordered homepage selections
+ *   are persisted authorities. A single validator prevents migrations, admin
+ *   handlers, and public readers from accepting different shapes.
  */
 
 export type ValidationResult<T> =
@@ -22,6 +29,7 @@ export type ValidationResult<T> =
 
 export const WORD_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const MAX_WORD_ID_LENGTH = 120;
+export const MAX_WORD_TITLE_LENGTH = 160;
 export const MAX_WORD_TEXT_LENGTH = 20_000;
 export const MAX_ATTRIBUTION_LENGTH = 240;
 export const MAX_SOURCE_URL_LENGTH = 2_048;
@@ -30,9 +38,14 @@ export const MAX_PROJECT_DESCRIPTION_LENGTH = 4_000;
 export const MAX_PROJECT_URL_LENGTH = 2_048;
 export const MAX_HOMEPAGE_WORDS = 5;
 export const HOMEPAGE_WORD_SLOT_COUNT = 5;
+export const PROJECT_ID_PATTERN = WORD_ID_PATTERN;
+export const MAX_PROJECT_ID_LENGTH = 120;
+export const MAX_HOMEPAGE_PROJECTS = 5;
+export const HOMEPAGE_PROJECT_SLOT_COUNT = 5;
 
 export interface WordInput {
   id: string;
+  title: string;
   text: string;
   attribution: string;
   source: string | null;
@@ -49,6 +62,15 @@ export interface FeaturedProject {
   url: string;
 }
 
+export interface ProjectInput extends FeaturedProject {
+  id: string;
+}
+
+export interface StoredProject extends ProjectInput {
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface HomepageSelection {
   selectedWordIds: string[];
   updatedAt: string;
@@ -56,6 +78,11 @@ export interface HomepageSelection {
 
 export interface LegacyHomepageSelection {
   selectedWordId: string;
+  updatedAt: string;
+}
+
+export interface HomepageProjectSelection {
+  selectedProjectIds: string[];
   updatedAt: string;
 }
 
@@ -80,6 +107,9 @@ export function validateWordInput(input: unknown): ValidationResult<WordInput> {
 
   const id = validateWordId(input.id);
   if (!id.ok) return id;
+
+  const title = validateRequiredTitle(input.title, "Title", MAX_WORD_TITLE_LENGTH);
+  if (!title.ok) return title;
 
   const text = normalizeMultilineText(input.text);
   if (!text) return { ok: false, error: "Text is required" };
@@ -110,8 +140,37 @@ export function validateWordInput(input: unknown): ValidationResult<WordInput> {
 
   return {
     ok: true,
-    value: { id: id.value, text, attribution, source },
+    value: { id: id.value, title: title.value, text, attribution, source },
   };
+}
+
+export function validateProjectId(input: unknown): ValidationResult<string> {
+  const value = typeof input === "string" ? input.trim() : "";
+  if (!value || codePointLength(value) > MAX_PROJECT_ID_LENGTH || !PROJECT_ID_PATTERN.test(value)) {
+    return { ok: false, error: "Invalid Project id" };
+  }
+  return { ok: true, value };
+}
+
+export function validateProjectInput(input: unknown): ValidationResult<ProjectInput> {
+  if (!isRecord(input)) return { ok: false, error: "Invalid Project" };
+  const id = validateProjectId(input.id);
+  if (!id.ok) return id;
+  const project = validateFeaturedProject(input);
+  if (!project.ok) return project;
+  return { ok: true, value: { id: id.value, ...project.value } };
+}
+
+export function validateStoredProject(input: unknown): ValidationResult<StoredProject> {
+  const project = validateProjectInput(input);
+  if (!project.ok) return project;
+  if (!isRecord(input) || !isCanonicalIsoTimestamp(input.createdAt)) {
+    return { ok: false, error: "Stored Project has an invalid createdAt" };
+  }
+  if (!isCanonicalIsoTimestamp(input.updatedAt)) {
+    return { ok: false, error: "Stored Project has an invalid updatedAt" };
+  }
+  return { ok: true, value: { ...project.value, createdAt: input.createdAt, updatedAt: input.updatedAt } };
 }
 
 export function validateStoredWord(input: unknown): ValidationResult<StoredWord> {
@@ -138,11 +197,8 @@ export function validateFeaturedProject(
 ): ValidationResult<FeaturedProject> {
   if (!isRecord(input)) return { ok: false, error: "Invalid featured project" };
 
-  const title = normalizeSingleLine(input.title);
-  if (!title) return { ok: false, error: "Project title is required" };
-  if (title.length > MAX_PROJECT_TITLE_LENGTH) {
-    return { ok: false, error: "Project title is too long" };
-  }
+  const title = validateRequiredTitle(input.title, "Project title", MAX_PROJECT_TITLE_LENGTH);
+  if (!title.ok) return title;
 
   const description = normalizeMultilineText(input.description);
   if (!description) {
@@ -161,7 +217,7 @@ export function validateFeaturedProject(
     return { ok: false, error: "Project URL must be an absolute HTTPS URL" };
   }
 
-  return { ok: true, value: { title, description, url } };
+  return { ok: true, value: { title: title.value, description, url } };
 }
 
 export function validateHomepageSelection(
@@ -214,26 +270,54 @@ export function validateSelectedWordIds(
   return { ok: true, value: selectedWordIds };
 }
 
+export function validateSelectedProjectIds(input: unknown): ValidationResult<string[]> {
+  if (!Array.isArray(input)) return { ok: false, error: "Selected Projects must be a list" };
+  if (input.length === 0) return { ok: false, error: "Select at least one Project" };
+  if (input.length > MAX_HOMEPAGE_PROJECTS) return { ok: false, error: "Select no more than five Projects" };
+  const selectedProjectIds: string[] = [];
+  for (const candidate of input) {
+    const projectId = validateProjectId(candidate);
+    if (!projectId.ok) return { ok: false, error: "Selected Projects contain an invalid Project id" };
+    if (selectedProjectIds.includes(projectId.value)) return { ok: false, error: "Selected Projects must be unique" };
+    selectedProjectIds.push(projectId.value);
+  }
+  return { ok: true, value: selectedProjectIds };
+}
+
+export function validateHomepageProjectSelection(input: unknown): ValidationResult<HomepageProjectSelection> {
+  if (!isRecord(input)) return { ok: false, error: "Invalid stored homepage Project selection" };
+  const selectedProjectIds = validateSelectedProjectIds(input.selectedProjectIds);
+  if (!selectedProjectIds.ok) {
+    return { ok: false, error: `Stored homepage Project selection is invalid: ${selectedProjectIds.error}` };
+  }
+  if (!isCanonicalIsoTimestamp(input.updatedAt)) {
+    return { ok: false, error: "Stored homepage Project selection has an invalid updatedAt" };
+  }
+  return { ok: true, value: { selectedProjectIds: selectedProjectIds.value, updatedAt: input.updatedAt } };
+}
+
+export function validateHomepageProjectSelectionSlots(input: unknown): ValidationResult<string[]> {
+  return validateSelectionSlots(
+    input,
+    HOMEPAGE_PROJECT_SLOT_COUNT,
+    "Homepage Project selection requires exactly five slots",
+    "Homepage Project slots are invalid",
+    "Homepage Project slots must be contiguous",
+    validateSelectedProjectIds
+  );
+}
+
 /** Parses exactly five ordered admin slots without filtering non-trailing gaps. */
 export function validateHomepageSelectionSlots(
   input: unknown
 ): ValidationResult<string[]> {
-  if (!Array.isArray(input) || input.length !== HOMEPAGE_WORD_SLOT_COUNT) {
-    return { ok: false, error: "Homepage selection requires exactly five slots" };
-  }
-  if (input.some((value) => typeof value !== "string")) {
-    return { ok: false, error: "Homepage Word slots are invalid" };
-  }
-
-  const firstUnused = input.indexOf("");
-  if (
-    firstUnused !== -1 &&
-    input.slice(firstUnused).some((value) => value !== "")
-  ) {
-    return { ok: false, error: "Homepage Word slots must be contiguous" };
-  }
-  return validateSelectedWordIds(
-    firstUnused === -1 ? input : input.slice(0, firstUnused)
+  return validateSelectionSlots(
+    input,
+    HOMEPAGE_WORD_SLOT_COUNT,
+    "Homepage selection requires exactly five slots",
+    "Homepage Word slots are invalid",
+    "Homepage Word slots must be contiguous",
+    validateSelectedWordIds
   );
 }
 
@@ -273,6 +357,36 @@ export function validateStoredFeaturedProject(
 
 function normalizeSingleLine(input: unknown): string {
   return typeof input === "string" ? input.trim().replace(/\s+/g, " ") : "";
+}
+
+function validateRequiredTitle(input: unknown, label: string, maxLength: number): ValidationResult<string> {
+  if (typeof input !== "string") return { ok: false, error: `${label} is required` };
+  if (/\r|\n/u.test(input)) return { ok: false, error: `${label} must be a single line` };
+  const value = input.trim().replace(/[\t ]+/gu, " ");
+  if (!value) return { ok: false, error: `${label} is required` };
+  if (codePointLength(value) > maxLength) return { ok: false, error: `${label} is too long` };
+  return { ok: true, value };
+}
+
+function validateSelectionSlots(
+  input: unknown,
+  count: number,
+  countError: string,
+  typeError: string,
+  gapError: string,
+  validate: (input: unknown) => ValidationResult<string[]>
+): ValidationResult<string[]> {
+  if (!Array.isArray(input) || input.length !== count) return { ok: false, error: countError };
+  if (input.some((value) => typeof value !== "string")) return { ok: false, error: typeError };
+  const firstUnused = input.indexOf("");
+  if (firstUnused !== -1 && input.slice(firstUnused).some((value) => value !== "")) {
+    return { ok: false, error: gapError };
+  }
+  return validate(firstUnused === -1 ? input : input.slice(0, firstUnused));
+}
+
+function codePointLength(value: string): number {
+  return [...value].length;
 }
 
 function normalizeMultilineText(input: unknown): string {

@@ -1117,7 +1117,7 @@ test("admin write handlers and public read helper exercise the production blog s
 });
 
 test("config and source invariants stay aligned with the hardening contract", async () => {
-  const [packageJson, wrangler, staticHeaders, astroConfig, home, adminHome, detail, editor, newPost, createRoute, updateRoute] =
+  const [packageJson, wrangler, staticHeaders, astroConfig, home, adminHome, blogList, detail, editor, newPost, createRoute, updateRoute] =
     await Promise.all([
       readFile(projectFile("package.json"), "utf8"),
       readFile(projectFile("wrangler.toml"), "utf8"),
@@ -1125,6 +1125,7 @@ test("config and source invariants stay aligned with the hardening contract", as
       readFile(projectFile("astro.config.mjs"), "utf8"),
       readFile(projectFile("src/pages/index.astro"), "utf8"),
       readFile(projectFile("src/pages/admin/index.astro"), "utf8"),
+      readFile(projectFile("src/pages/blog/index.astro"), "utf8"),
       readFile(projectFile("src/pages/blog/[slug].astro"), "utf8"),
       readFile(projectFile("src/components/PostEditor.astro"), "utf8"),
       readFile(projectFile("src/pages/admin/posts/new.astro"), "utf8"),
@@ -1162,6 +1163,8 @@ test("config and source invariants stay aligned with the hardening contract", as
 
   assert.doesNotMatch(detail, /set:html=\{post\.body\}/);
   assert.match(detail, /safeBody/);
+  assert.match(blogList, /href="\/"[\s\S]*Home/);
+  assert.match(detail, /href="\/" class="back-link">Home/);
   assert.match(editor, /type="hidden" id="body" name="body"/);
   assert.match(adminHome, /resolveAdminAuthMode/);
   assert.match(adminHome, /Local development mode/);

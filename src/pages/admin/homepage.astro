@@ -21,25 +21,32 @@ import { env as cloudflareEnv } from "cloudflare:workers";
 import type { Env } from "../../lib/kv-store.ts";
 import {
   bootstrapSiteContent,
+  listProjects,
   listWords,
   type HomepageState,
+  type ProjectEntry,
   type WordEntry,
 } from "../../lib/site-content.ts";
 
 const env = cloudflareEnv as Env;
 let state: HomepageState | null = null;
 let words: WordEntry[] = [];
+let projects: ProjectEntry[] = [];
 let error: string | null = null;
 
 try {
   const content = await bootstrapSiteContent(env);
   state = content.state;
   words = await listWords(env);
+  projects = await listProjects(env);
 } catch (caught) {
   error = caught instanceof Error ? caught.message : "Failed to load homepage settings.";
 }
 const selectionSlots = Array.from({ length: 5 },
-  (_, index) => state?.selection.selectedWordIds[index] ?? ""
+  (_, index) => state?.wordSelection.selectedWordIds[index] ?? ""
+);
+const projectSelectionSlots = Array.from({ length: 5 },
+  (_, index) => state?.projectSelection.selectedProjectIds[index] ?? ""
 );
 ---
 
@@ -72,6 +79,7 @@ const selectionSlots = Array.from({ length: 5 },
       <nav>
         <a href="/admin">Admin</a>
         <a href="/admin/words">Words</a>
+        <a href="/admin/projects">Projects</a>
         <a href="/admin/posts">Posts</a>
         <a href="/">Home</a>
       </nav>
@@ -82,7 +90,7 @@ const selectionSlots = Array.from({ length: 5 },
           <section id="words-selection">
             <h2>Words I Like order</h2>
             <form method="POST" action="/admin/api/homepage">
-              <input type="hidden" name="_action" value="selection" />
+              <input type="hidden" name="_action" value="word-selection" />
               {selectionSlots.map((selectedWordId, index) => (
                 <div class="field">
                   <label for={`selectedWordIds-${index}`}>
@@ -96,7 +104,7 @@ const selectionSlots = Array.from({ length: 5 },
                     <option value="">{index === 0 ? "Choose a Word" : "Not used"}</option>
                     {words.map((word) => (
                       <option value={word.id} selected={word.id === selectedWordId}>
-                        {word.attribution} — {word.text.slice(0, 80)}
+                        {word.title} — {word.attribution}
                       </option>
                     ))}
                   </select>
@@ -106,23 +114,24 @@ const selectionSlots = Array.from({ length: 5 },
             </form>
           </section>
 
-          <section>
-            <h2>Featured project</h2>
+          <section id="projects-selection">
+            <h2>Featured Projects order</h2>
             <form method="POST" action="/admin/api/homepage">
-              <input type="hidden" name="_action" value="project" />
-              <div class="field">
-                <label for="title">Title</label>
-                <input id="title" name="title" value={state.featuredProject.title} required />
-              </div>
-              <div class="field">
-                <label for="description">Description</label>
-                <textarea id="description" name="description" required>{state.featuredProject.description}</textarea>
-              </div>
-              <div class="field">
-                <label for="url">Project URL (HTTPS)</label>
-                <input id="url" name="url" type="url" inputmode="url" value={state.featuredProject.url} required />
-              </div>
-              <button type="submit">Update project</button>
+              <input type="hidden" name="_action" value="project-selection" />
+              {projectSelectionSlots.map((selectedProjectId, index) => (
+                <div class="field">
+                  <label for={`selectedProjectIds-${index}`}>
+                    Position {index + 1}{index === 0 ? " (required)" : ""}
+                  </label>
+                  <select id={`selectedProjectIds-${index}`} name="selectedProjectIds" required={index === 0}>
+                    <option value="">{index === 0 ? "Choose a Project" : "Not used"}</option>
+                    {projects.map((project) => (
+                      <option value={project.id} selected={project.id === selectedProjectId}>{project.title}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+              <button type="submit">Update Projects order</button>
             </form>
           </section>
         </>

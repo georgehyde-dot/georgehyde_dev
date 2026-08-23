@@ -1,293 +1,72 @@
 /**
- * Public homepage and Words collection contract.
- *
- * @decision DEC-SR-001
- * @title Render curated public content directly through SSR authorities
+ * @decision DEC-SCV2-008
+ * @title Prove SSR collections and DOM-only manual carousels
  * @status accepted
- * @rationale These tests couple the public Astro surfaces to the canonical
- *   BLOG_POSTS helpers and exercise the same stored-data sequence the Worker
- *   renders, while source invariants prohibit legacy/client fallback paths.
+ * @rationale Source and production-helper sequences prove bounded selected data,
+ *   full collection pages, escaped expressions, stable geometry, and a tiny
+ *   client index that wraps and resets only the reading viewport.
  */
-
 import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
-
 import {
-  bootstrapSiteContent,
-  createWord,
-  getLatestPublishedPostPreview,
-  listWords,
-  updateFeaturedProject,
-  updateHomepageSelection,
+  TOLKIEN_WORD, bootstrapSiteContent, createProject, createWord,
+  getHomepageContent, getLatestPublishedPostPreview, listProjects, listWords,
+  updateHomepageProjectSelection, updateHomepageSelection,
 } from "../src/lib/site-content.ts";
 import { putBlogPost } from "../src/lib/kv-store.ts";
+const file = (path) => new URL(`../${path}`, import.meta.url);
+function kv() { const records=new Map(); return { async get(key,options){const item=records.get(key);if(!item)return null;return options?.type==="json"?JSON.parse(item.value):item.value;},async put(key,value,options={}){records.set(key,{value,metadata:options.metadata});},async delete(key){records.delete(key);},async list({prefix="",cursor}={}){const start=cursor?Number(cursor):0;const keys=[...records.entries()].filter(([key])=>key.startsWith(prefix)).sort(([a],[b])=>a.localeCompare(b)).map(([name,item])=>({name,metadata:item.metadata}));const page=keys.slice(start,start+2);const next=start+2;return{keys:page,list_complete:next>=keys.length,cursor:next>=keys.length?undefined:String(next)}}}; }
+const envFor=()=>({BLOG_POSTS:kv()});
 
-const projectFile = (path) => new URL(`../${path}`, import.meta.url);
-
-function createMemoryKv(pageSize = 2) {
-  const records = new Map();
-  return {
-    async get(key, options) {
-      const record = records.get(key);
-      if (!record) return null;
-      return options?.type === "json" ? JSON.parse(record.value) : record.value;
-    },
-    async put(key, value, options = {}) {
-      records.set(key, { value, metadata: options.metadata });
-    },
-    async delete(key) {
-      records.delete(key);
-    },
-    async list({ prefix = "", cursor } = {}) {
-      const start = cursor ? Number(cursor) : 0;
-      const keys = [...records.entries()]
-        .filter(([key]) => key.startsWith(prefix))
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([name, record]) => ({ name, metadata: record.metadata }));
-      const page = keys.slice(start, start + pageSize);
-      const next = start + pageSize;
-      return {
-        keys: page,
-        list_complete: next >= keys.length,
-        cursor: next >= keys.length ? undefined : String(next),
-      };
-    },
-  };
-}
-
-function createEnv() {
-  return { BLOG_POSTS: createMemoryKv() };
-}
-
-function post({ slug, title, body, createdAt, published }) {
-  return {
-    slug,
-    title,
-    body,
-    author: "George Hyde",
-    createdAt,
-    updatedAt: createdAt,
-    published,
-  };
-}
-
-test("public source uses SSR canonical reads and escaped text expressions", async () => {
-  const [home, words] = await Promise.all([
-    readFile(projectFile("src/pages/index.astro"), "utf8"),
-    readFile(projectFile("src/pages/words/index.astro"), "utf8"),
-  ]);
-
-  for (const source of [home, words]) {
-    assert.match(source, /export const prerender = false/);
-    assert.match(source, /cloudflare:workers/);
-    assert.doesNotMatch(source, /set:html|client:|fetch\s*\(/i);
-  }
-
-  assert.match(home, /bootstrapSiteContent\(env\)/);
-  assert.match(home, /getLatestPublishedPostPreview\(env\)/);
-  assert.match(home, /selectedWords\.map\(\(word, index\)/);
-  assert.match(home, /\{word\.text\}/);
-  assert.match(home, /\{word\.attribution\}/);
-  assert.match(home, /\{featuredProject\.title\}/);
-  assert.match(home, /\{featuredProject\.description\}/);
-  assert.match(home, /href=\{featuredProject\.url\}/);
-  assert.match(home, /href=\{`\/blog\/\$\{latestPost\.slug\}`\}/);
-  assert.match(home, /\{latestPost\.excerpt\}/);
-  assert.match(home, /No published posts yet\./);
-  assert.match(home, /href="\/words"/);
-  assert.match(home, /href="\/blog"/);
-  assert.match(home, /href="https:\/\/github\.com\/georgehyde-dot"/);
-  assert.match(home, /href="mailto:hello@georgehyde\.dev"/);
-
-  assert.match(words, /await bootstrapSiteContent\(env\)/);
-  assert.match(words, /await listWords\(env\)/);
-  assert.match(words, /words\.map\(\(word\)/);
-  assert.match(words, /\{word\.text\}/);
-  assert.match(words, /\{word\.attribution\}/);
-  assert.match(words, /href=\{word\.source\}/);
-  assert.doesNotMatch(home + words, /TOLKIEN_WORD|INITIAL_FEATURED_PROJECT/);
+test("public sources use canonical SSR helpers, escaped expressions, exact order, and retained navigation", async () => {
+  const [home,words,projects,blog,detail]=await Promise.all(["src/pages/index.astro","src/pages/words/index.astro","src/pages/projects/index.astro","src/pages/blog/index.astro","src/pages/blog/[slug].astro"].map((path)=>readFile(file(path),"utf8")));
+  for(const source of [home,words,projects]) { assert.match(source,/export const prerender = false/); assert.match(source,/cloudflare:workers/); assert.doesNotMatch(source,/set:html|client:|fetch\s*\(/i); }
+  assert.match(home,/bootstrapSiteContent\(env\)/); assert.match(home,/getLatestPublishedPostPreview\(env\)/);
+  assert.match(home,/selectedWords\.map\(\(word, index\)/); assert.match(home,/selectedProjects\.map\(\(project, index\)/);
+  for(const expression of ["{word.title}","{word.text}","{word.attribution}","{project.title}","{project.description}","href={project.url}","{latestPost.excerpt}"]) assert.ok(home.includes(expression));
+  const latest=home.indexOf(">Latest Blog Post<"), wordSection=home.indexOf(">Words I Like<"), projectSection=home.indexOf(">Featured Projects<"); assert.ok(latest>=0&&latest<wordSection&&wordSection<projectSection);
+  for(const link of ['href="/words"','href="/projects"','href="/blog"','href="https://github.com/georgehyde-dot"','href="mailto:hello@georgehyde.dev"']) assert.ok(home.includes(link));
+  assert.match(home,/No published posts yet\./); assert.match(blog,/href="\/"[\s\S]*Home/); assert.match(detail,/href="\/" class="back-link">Home/);
+  assert.match(words,/await listWords\(env\)/); assert.match(projects,/await listProjects\(env\)/); assert.match(words,/id=\{`word-\$\{word\.id\}`\}/); assert.match(projects,/id=\{`project-\$\{project\.id\}`\}/);
+  assert.doesNotMatch(home+words+projects,/TOLKIEN_WORD|INITIAL_FEATURED_PROJECT|FEATURED_PROJECT_KEY/);
 });
 
-test("canonical public sequence selects configured content and newest published post", async () => {
-  const env = createEnv();
-  await bootstrapSiteContent(env);
-  await createWord(
-    env,
-    {
-      id: "script-like-poem",
-      text: "<script>alert('word')</script>\nSecond & final line",
-      attribution: "A <Writer> & Friend",
-      source: "https://example.com/poem?x=%3Ctag%3E&y=1",
-    },
-    "2026-08-23T00:00:00.000Z"
-  );
-  await updateHomepageSelection(env, ["script-like-poem", "tolkien-food-cheer-song"]);
-  await updateFeaturedProject(env, {
-    title: "Project <One> & Two",
-    description: "A very long configured description with <markup> & punctuation.",
-    url: "https://example.com/project?x=%3Ctag%3E&y=1",
-  });
-
-  await putBlogPost(env, post({
-    slug: "older-published",
-    title: "Older Published",
-    body: "<p>Older body.</p>",
-    createdAt: "2026-08-20T00:00:00.000Z",
-    published: true,
-  }));
-  await putBlogPost(env, post({
-    slug: "newest-published",
-    title: "Newest <Published> & Post",
-    body: "<p>First &amp; newest line.</p><p>Second <strong>safe</strong> line.</p>",
-    createdAt: "2026-08-22T00:00:00.000Z",
-    published: true,
-  }));
-  await putBlogPost(env, post({
-    slug: "newer-draft",
-    title: "Newer Draft",
-    body: "<p>Must not appear.</p>",
-    createdAt: "2026-08-23T00:00:00.000Z",
-    published: false,
-  }));
-
-  const [content, words, preview] = await Promise.all([
-    bootstrapSiteContent(env),
-    listWords(env),
-    getLatestPublishedPostPreview(env),
-  ]);
-  assert.deepEqual(content.selectedWords.map(({ id }) => id), [
-    "script-like-poem",
-    "tolkien-food-cheer-song",
-  ]);
-  assert.equal(content.state.featuredProject.title, "Project <One> & Two");
-  assert.deepEqual(words.map((word) => word.id), [
-    "tolkien-food-cheer-song",
-    "script-like-poem",
-  ]);
-  assert.deepEqual(preview, {
-    slug: "newest-published",
-    title: "Newest <Published> & Post",
-    excerpt: "First & newest line. Second safe line.",
-  });
+test("real canonical sequence returns only selected five in server order while collection lists include sixth", async () => {
+  const env=envFor(); await bootstrapSiteContent(env);
+  for(let i=1;i<=6;i+=1){await createWord(env,{id:`word-${i}`,title:`Word <${i}> & title`,text:`Line ${i}\n<script>${i}</script>`,attribution:`Writer & ${i}`,source:null},`2026-08-23T0${i}:00:00.000Z`);await createProject(env,{id:`project-${i}`,title:`Project <${i}>`,description:`Description ${i}\n<script>${i}</script>`,url:`https://example.com/project-${i}`},`2026-08-23T0${i}:00:00.000Z`);}
+  const wordOrder=["word-5",TOLKIEN_WORD.id,"word-2","word-4","word-1"], projectOrder=["project-5","featured-project","project-2","project-4","project-1"];
+  await updateHomepageSelection(env,wordOrder); await updateHomepageProjectSelection(env,projectOrder);
+  await putBlogPost(env,{slug:"older",title:"Older",body:"<p>Older</p>",author:"George Hyde",createdAt:"2026-08-20T00:00:00.000Z",updatedAt:"2026-08-20T00:00:00.000Z",published:true});
+  await putBlogPost(env,{slug:"newest",title:"Newest <Post>",body:"<p>First &amp; newest.</p>",author:"George Hyde",createdAt:"2026-08-22T00:00:00.000Z",updatedAt:"2026-08-22T00:00:00.000Z",published:true});
+  await putBlogPost(env,{slug:"draft",title:"Draft",body:"<p>Draft</p>",author:"George Hyde",createdAt:"2026-08-24T00:00:00.000Z",updatedAt:"2026-08-24T00:00:00.000Z",published:false});
+  const [content,words,projects,preview]=await Promise.all([getHomepageContent(env),listWords(env),listProjects(env),getLatestPublishedPostPreview(env)]);
+  assert.deepEqual(content.selectedWords.map(({id})=>id),wordOrder); assert.deepEqual(content.selectedProjects.map(({id})=>id),projectOrder);
+  assert.ok(words.some(({id})=>id==="word-6")); assert.ok(projects.some(({id})=>id==="project-6")); assert.equal(content.selectedWords.some(({id})=>id==="word-6"),false); assert.equal(content.selectedProjects.some(({id})=>id==="project-6"),false);
+  assert.deepEqual(preview,{slug:"newest",title:"Newest <Post>",excerpt:"First & newest."});
 });
 
-test("homepage section and configured slide order are exact", async () => {
-  const home = await readFile(projectFile("src/pages/index.astro"), "utf8");
-  const latest = home.indexOf(">Latest Blog Post<");
-  const words = home.indexOf(">Words I Like<");
-  const project = home.indexOf(">Featured Project<");
-  assert.ok(latest >= 0 && latest < words && words < project);
-
-  assert.match(home, /selectedWords\.map\(\(word, index\)/);
-  assert.match(home, /data-word-slide/);
-  assert.match(home, /hidden=\{index !== 0\}/);
-  assert.match(home, /aria-label="Previous Word"/);
-  assert.match(home, /aria-label="Next Word"/);
-  assert.match(home, /aria-live="polite"/);
-  assert.match(home, /disabled=\{selectedWords\.length === 1\}/);
-  assert.doesNotMatch(home, /setInterval|setTimeout|autoplay|auto-rotate/i);
+test("both stable top-controlled carousels show first without JS, manually wrap, announce, and reset viewport", async () => {
+  const home=await readFile(file("src/pages/index.astro"),"utf8");
+  assert.equal((home.match(/data-carousel data-carousel-label=/g)??[]).length,2); assert.match(home,/hidden=\{index !== 0\}/); assert.match(home,/aria-label="Previous Word"/); assert.match(home,/aria-label="Next Project"/); assert.match(home,/aria-live="polite"/); assert.match(home,/height:\s*14rem/); assert.match(home,/overflow:\s*auto/); assert.match(home,/scrollbar-gutter:\s*stable/); assert.match(home,/viewport\.scrollTop = 0/);
+  assert.doesNotMatch(home,/setInterval|setTimeout|autoplay|auto-rotate|localStorage|sessionStorage|indexedDB|document\.cookie|location\.|history\.|fetch\s*\(/i);
+  const script=home.match(/<script is:inline>([\s\S]*?)<\/script>/)?.[1]; assert.ok(script);
+  function carousel(label,count){const slides=Array.from({length:count},()=>({hidden:false}));const handlers={};const viewport={scrollTop:88};const previous={disabled:false,addEventListener(_type,handler){handlers.previous=handler;}};const next={disabled:false,addEventListener(_type,handler){handlers.next=handler;}};const status={textContent:""};return{dataset:{carouselLabel:label},slides,handlers,viewport,previous,next,status,querySelectorAll(selector){assert.equal(selector,"[data-carousel-slide]");return slides;},querySelector(selector){return{"[data-carousel-viewport]":viewport,"[data-carousel-previous]":previous,"[data-carousel-next]":next,"[data-carousel-status]":status}[selector];}};}
+  const words=carousel("Word",3),projects=carousel("Project",1);runInNewContext(script,{document:{querySelectorAll:()=>[words,projects]}});
+  assert.deepEqual(words.slides.map(({hidden})=>hidden),[false,true,true]);assert.equal(words.viewport.scrollTop,0);assert.equal(words.status.textContent,"Word 1 of 3");words.viewport.scrollTop=55;words.handlers.previous();assert.deepEqual(words.slides.map(({hidden})=>hidden),[true,true,false]);assert.equal(words.viewport.scrollTop,0);words.handlers.next();assert.deepEqual(words.slides.map(({hidden})=>hidden),[false,true,true]);
+  assert.equal(projects.previous.disabled,true);assert.equal(projects.next.disabled,true);assert.equal(projects.status.textContent,"Project 1 of 1");
 });
 
-test("minimal carousel script wraps both directions and disables one-item controls", async () => {
-  const home = await readFile(projectFile("src/pages/index.astro"), "utf8");
-  const script = home.match(/<script is:inline>([\s\S]*?)<\/script>/)?.[1];
-  assert.ok(script, "inline carousel script must exist");
-
-  const execute = (count) => {
-    const slides = Array.from({ length: count }, () => ({ hidden: false }));
-    const handlers = {};
-    const previous = {
-      disabled: false,
-      addEventListener(_type, handler) { handlers.previous = handler; },
-    };
-    const next = {
-      disabled: false,
-      addEventListener(_type, handler) { handlers.next = handler; },
-    };
-    const status = { textContent: "" };
-    const carousel = {
-      querySelectorAll(selector) {
-        assert.equal(selector, "[data-word-slide]");
-        return slides;
-      },
-      querySelector(selector) {
-        return {
-          "[data-word-previous]": previous,
-          "[data-word-next]": next,
-          "[data-word-status]": status,
-        }[selector];
-      },
-    };
-    runInNewContext(script, {
-      document: { querySelector: () => carousel },
-    });
-    return { slides, handlers, previous, next, status };
-  };
-
-  const three = execute(3);
-  assert.deepEqual(three.slides.map(({ hidden }) => hidden), [false, true, true]);
-  assert.equal(three.status.textContent, "Word 1 of 3");
-  three.handlers.previous();
-  assert.deepEqual(three.slides.map(({ hidden }) => hidden), [true, true, false]);
-  assert.equal(three.status.textContent, "Word 3 of 3");
-  three.handlers.next();
-  assert.deepEqual(three.slides.map(({ hidden }) => hidden), [false, true, true]);
-
-  const one = execute(1);
-  assert.equal(one.previous.disabled, true);
-  assert.equal(one.next.disabled, true);
-  assert.deepEqual(one.slides.map(({ hidden }) => hidden), [false]);
+test("Words index is sticky, responsive, stable-anchor/focus capable, multiline safe, and Projects is full responsive collection", async () => {
+  const [words,projects]=await Promise.all([readFile(file("src/pages/words/index.astro"),"utf8"),readFile(file("src/pages/projects/index.astro"),"utf8")]);
+  for(const required of [/class="title-index"/,/aria-label="Words index"/,/href=\{`#word-\$\{word\.id\}`\}/,/tabindex="-1"/,/position:\s*sticky/,/scroll-margin-top/,/data-index-link/,/\.focus\(\{ preventScroll: true \}\)/,/@media \(max-width: 760px\)/]) assert.match(words,required);
+  for(const source of [words,projects]){assert.match(source,/overflow-wrap:\s*anywhere/);assert.match(source,/white-space:\s*pre-wrap/);assert.match(source,/@media\(max-width:560px\)|@media \(max-width: 560px\)/);}
+  assert.match(words,/\{word\.title\}/);assert.match(projects,/projects\.map\(\(project\)/);assert.match(projects,/\{project\.description\}/);assert.match(projects,/href=\{project\.url\}/);
 });
 
-test("homepage has a truthful empty-post state through the real preview helper", async () => {
-  const env = createEnv();
-  await bootstrapSiteContent(env);
-  assert.equal(await getLatestPublishedPostPreview(env), null);
-});
-
-test("legacy public surfaces are deleted rather than hidden or redirected", async () => {
-  const [home, words] = await Promise.all([
-    readFile(projectFile("src/pages/index.astro"), "utf8"),
-    readFile(projectFile("src/pages/words/index.astro"), "utf8"),
-  ]);
-  const publicSource = `${home}\n${words}`;
-
-  for (const forbidden of [
-    "Work in Progress",
-    "Quote of the Day",
-    "Current Thoughts",
-    "Recent Project",
-    "GitHub Activity",
-    "api.github",
-    "ghchart",
-    "contribution",
-    "progress-orb",
-    "progress-indicator",
-    "project-modal",
-    "showProjectModal",
-    "/progress",
-  ]) assert.doesNotMatch(publicSource, new RegExp(forbidden, "i"));
-
-  await assert.rejects(
-    access(projectFile("src/pages/progress.astro")),
-    (error) => error?.code === "ENOENT"
-  );
-});
-
-test("public layouts preserve multiline and long content at narrow widths", async () => {
-  const [home, words] = await Promise.all([
-    readFile(projectFile("src/pages/index.astro"), "utf8"),
-    readFile(projectFile("src/pages/words/index.astro"), "utf8"),
-  ]);
-  for (const source of [home, words]) {
-    assert.match(source, /@media \(max-width:/);
-    assert.match(source, /overflow-wrap:\s*anywhere/);
-    assert.match(source, /white-space:\s*pre-wrap/);
-  }
-  assert.match(home, /-webkit-line-clamp:\s*3/);
-  assert.match(words, /width:\s*min\(/);
-  assert.doesNotMatch(home, /localStorage|sessionStorage|indexedDB|document\.cookie|location\.|history\.|fetch\s*\(/);
-  assert.doesNotMatch(home, /React|Vue|Svelte|Alpine|Stimulus/);
+test("progress remains a true missing route and every named legacy surface stays absent", async () => {
+  const source=(await Promise.all(["src/pages/index.astro","src/pages/words/index.astro","src/pages/projects/index.astro"].map((path)=>readFile(file(path),"utf8")))).join("\n");
+  for(const forbidden of ["Work in Progress","Quote of the Day","Current Thoughts","Recent Project","GitHub Activity","api.github","ghchart","contribution","progress-orb","progress-indicator","project-modal","showProjectModal","/progress"])assert.doesNotMatch(source,new RegExp(forbidden,"i"));
+  await assert.rejects(access(file("src/pages/progress.astro")),(error)=>error?.code==="ENOENT");
 });
